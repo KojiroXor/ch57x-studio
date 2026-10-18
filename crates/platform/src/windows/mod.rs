@@ -65,6 +65,44 @@ impl PlatformBackend for WindowsPlatform {
     }
 }
 
+impl WindowManagerBackend for WindowsPlatform {
+    fn capture_foreground_window(&self, exclude_pid: u32) -> Result<ForegroundAppInfo, PlatformError> {
+        self.windows.capture_foreground_window(exclude_pid)
+    }
+
+    fn list_visible_windows(&self, exclude_pid: u32) -> Result<Vec<ForegroundAppInfo>, PlatformError> {
+        self.windows.list_visible_windows(exclude_pid)
+    }
+
+    fn launch_or_place_window(
+        &self,
+        selector: &WindowSelector,
+        placement: &WindowPlacement,
+        launch_cmd: Option<(&Path, &[String], Option<&Path>)>,
+        timeout_ms: u64,
+    ) -> Result<WindowActionResult, PlatformError> {
+        self.windows.launch_or_place_window(selector, placement, launch_cmd, timeout_ms)
+    }
+}
+
+impl InputInjectorBackend for WindowsPlatform {
+    fn can_inject_into_foreground(&self) -> bool {
+        self.input.can_inject_into_foreground()
+    }
+
+    fn tap_key(&self, token: &str) -> Result<(), PlatformError> {
+        self.input.tap_key(token)
+    }
+
+    fn chord_keys(&self, modifiers: &[String], key_token: &str) -> Result<(), PlatformError> {
+        self.input.chord_keys(modifiers, key_token)
+    }
+
+    fn type_unicode_text(&self, text: &str) -> Result<(), PlatformError> {
+        self.input.type_unicode_text(text)
+    }
+}
+
 impl HotkeyBackend for WindowsHotkeysBackend {
     fn register_triggers(
         &self,

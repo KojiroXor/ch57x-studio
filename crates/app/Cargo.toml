@@ -4,6 +4,11 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
+default-run = "vortexdeck"
+
+[[bin]]
+name = "vortexdeck"
+path = "src/main.rs"
 
 [dependencies]
 ch57x-domain = { workspace = true }
@@ -13,8 +18,14 @@ ch57x-hardware = { workspace = true }
 ch57x-platform = { workspace = true }
 ch57x-runtime = { workspace = true }
 ch57x-ui = { workspace = true }
+crossbeam-channel = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 eframe = { workspace = true }
 egui = { workspace = true }
+dirs = { workspace = true }
+uuid = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true }

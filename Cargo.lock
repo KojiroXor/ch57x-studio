@@ -683,11 +683,15 @@ dependencies = [
  "ch57x-platform",
  "ch57x-runtime",
  "ch57x-ui",
+ "crossbeam-channel",
+ "dirs",
  "eframe",
  "egui",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
+ "windows 0.59.0",
 ]
 
 [[package]]
