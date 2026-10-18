@@ -1,0 +1,20 @@
+[package]
+name = "ch57x-studio"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+ch57x-domain = { workspace = true }
+ch57x-persistence = { workspace = true }
+ch57x-compiler = { workspace = true }
+ch57x-hardware = { workspace = true }
+ch57x-platform = { workspace = true }
+ch57x-runtime = { workspace = true }
+ch57x-ui = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+eframe = { workspace = true }
+egui = { workspace = true }

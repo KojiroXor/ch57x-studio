@@ -1,0 +1,13 @@
+[package]
+name = "ch57x-compiler"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+ch57x-domain = { workspace = true }
+serde = { workspace = true }
+serde_yaml = { workspace = true }
+thiserror = { workspace = true }
+sha2 = { workspace = true }

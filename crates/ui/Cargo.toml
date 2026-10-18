@@ -1,0 +1,14 @@
+[package]
+name = "ch57x-ui"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+ch57x-domain = { workspace = true }
+ch57x-hardware = { workspace = true }
+ch57x-platform = { workspace = true }
+egui = { workspace = true }
+eframe = { workspace = true }
+tracing = { workspace = true }

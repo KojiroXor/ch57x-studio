@@ -1,0 +1,18 @@
+[package]
+name = "ch57x-platform"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+ch57x-domain = { workspace = true }
+thiserror = { workspace = true }
+crossbeam-channel = { workspace = true }
+tracing = { workspace = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+x11rb = { workspace = true }

@@ -1,0 +1,1 @@
+//! Window actor stub

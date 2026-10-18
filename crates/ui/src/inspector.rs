@@ -1,0 +1,1 @@
+//! Contextual slot inspector widget
