@@ -9,5 +9,4 @@ license.workspace = true
 ch57x-domain = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true }
 tracing = { workspace = true }

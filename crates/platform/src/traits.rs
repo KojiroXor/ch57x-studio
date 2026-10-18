@@ -1,4 +1,6 @@
-use ch57x_domain::actions::{ForegroundAppInfo, WindowActionResult, WindowPlacement, WindowSelector};
+use ch57x_domain::actions::{
+    ForegroundAppInfo, WindowActionResult, WindowPlacement, WindowSelector,
+};
 use ch57x_domain::capabilities::CapabilityMatrix;
 use ch57x_domain::errors::PlatformError;
 use ch57x_domain::triggers::PhantomTrigger;
@@ -15,15 +17,24 @@ pub trait PlatformBackend: Send + Sync {
 pub trait HotkeyBackend: Send + Sync {
     /// Registra l'insieme di trigger richiesti dal profilo attivo.
     /// Restituisce la lista di eventuali trigger andati in conflitto col sistema operativo.
-    fn register_triggers(&self, triggers: &[PhantomTrigger]) -> Result<Vec<PhantomTrigger>, PlatformError>;
+    fn register_triggers(
+        &self,
+        triggers: &[PhantomTrigger],
+    ) -> Result<Vec<PhantomTrigger>, PlatformError>;
     fn unregister_all(&self) -> Result<(), PlatformError>;
 }
 
 pub trait WindowManagerBackend: Send + Sync {
     /// Legge la finestra attualmente in primo piano (escludendo il processo corrente se richiesto).
-    fn capture_foreground_window(&self, exclude_pid: u32) -> Result<ForegroundAppInfo, PlatformError>;
+    fn capture_foreground_window(
+        &self,
+        exclude_pid: u32,
+    ) -> Result<ForegroundAppInfo, PlatformError>;
     /// Enumera tutte le finestre visibili idonee per uno Snapshot del Workspace.
-    fn list_visible_windows(&self, exclude_pid: u32) -> Result<Vec<ForegroundAppInfo>, PlatformError>;
+    fn list_visible_windows(
+        &self,
+        exclude_pid: u32,
+    ) -> Result<Vec<ForegroundAppInfo>, PlatformError>;
     /// Esegue la logica completa: trova finestra o avvia processo, posiziona (compensando DWM) e richiede focus.
     fn launch_or_place_window(
         &self,

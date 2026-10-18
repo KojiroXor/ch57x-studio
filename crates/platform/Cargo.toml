@@ -12,7 +12,10 @@ crossbeam-channel = { workspace = true }
 tracing = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows = { workspace = true }
+windows = { workspace = true, features = [
+    "Win32_Security",
+    "Win32_System_Registry",
+] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 x11rb = { workspace = true }

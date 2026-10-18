@@ -2,7 +2,9 @@ pub mod wayland_stub;
 pub mod x11_backend;
 
 use crate::traits::*;
-use ch57x_domain::actions::{ForegroundAppInfo, WindowActionResult, WindowPlacement, WindowSelector};
+use ch57x_domain::actions::{
+    ForegroundAppInfo, WindowActionResult, WindowPlacement, WindowSelector,
+};
 use ch57x_domain::capabilities::CapabilityMatrix;
 use ch57x_domain::errors::PlatformError;
 use ch57x_domain::triggers::PhantomTrigger;
@@ -24,10 +26,10 @@ impl Default for LinuxPlatform {
 
 impl PlatformBackend for LinuxPlatform {
     fn capability_matrix(&self) -> CapabilityMatrix {
-        if std::env::var("WAYLAND_DISPLAY").is_ok() {
-            CapabilityMatrix::linux_wayland()
+        if wayland_stub::is_wayland_session() {
+            wayland_stub::wayland_capabilities()
         } else {
-            CapabilityMatrix::linux_x11()
+            x11_backend::x11_capabilities()
         }
     }
 
@@ -49,8 +51,17 @@ impl PlatformBackend for LinuxPlatform {
 }
 
 impl HotkeyBackend for LinuxPlatform {
-    fn register_triggers(&self, _triggers: &[PhantomTrigger]) -> Result<Vec<PhantomTrigger>, PlatformError> {
-        Ok(Vec::new())
+    fn register_triggers(
+        &self,
+        _triggers: &[PhantomTrigger],
+    ) -> Result<Vec<PhantomTrigger>, PlatformError> {
+        if wayland_stub::is_wayland_session() {
+            Err(PlatformError::Unsupported(
+                "Global hotkeys require X11 or desktop portal under Wayland".into(),
+            ))
+        } else {
+            Ok(Vec::new())
+        }
     }
 
     fn unregister_all(&self) -> Result<(), PlatformError> {
@@ -59,11 +70,25 @@ impl HotkeyBackend for LinuxPlatform {
 }
 
 impl WindowManagerBackend for LinuxPlatform {
-    fn capture_foreground_window(&self, _exclude_pid: u32) -> Result<ForegroundAppInfo, PlatformError> {
-        Err(PlatformError::Unsupported("Linux active window capture".into()))
+    fn capture_foreground_window(
+        &self,
+        _exclude_pid: u32,
+    ) -> Result<ForegroundAppInfo, PlatformError> {
+        if wayland_stub::is_wayland_session() {
+            Err(PlatformError::Unsupported(
+                "Arbitrary window capture is restricted by Wayland security protocol".into(),
+            ))
+        } else {
+            Err(PlatformError::Unsupported(
+                "X11 active window capture requires X11 session running".into(),
+            ))
+        }
     }
 
-    fn list_visible_windows(&self, _exclude_pid: u32) -> Result<Vec<ForegroundAppInfo>, PlatformError> {
+    fn list_visible_windows(
+        &self,
+        _exclude_pid: u32,
+    ) -> Result<Vec<ForegroundAppInfo>, PlatformError> {
         Ok(Vec::new())
     }
 
@@ -74,7 +99,15 @@ impl WindowManagerBackend for LinuxPlatform {
         _launch_cmd: Option<(&Path, &[String], Option<&Path>)>,
         _timeout_ms: u64,
     ) -> Result<WindowActionResult, PlatformError> {
-        Err(PlatformError::Unsupported("Linux window placement".into()))
+        if wayland_stub::is_wayland_session() {
+            Err(PlatformError::Unsupported(
+                "Window placement is restricted on Wayland compositors".into(),
+            ))
+        } else {
+            Err(PlatformError::Unsupported(
+                "X11 window placement requires X11 session running".into(),
+            ))
+        }
     }
 }
 
