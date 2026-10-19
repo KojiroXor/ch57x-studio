@@ -562,7 +562,7 @@ pub fn hex_to_color32(hex: &str) -> Option<egui::Color32> {
         let g = u8::from_str_radix(&s[2..4], 16).ok()?;
         let b = u8::from_str_radix(&s[4..6], 16).ok()?;
         let a = u8::from_str_radix(&s[6..8], 16).ok()?;
-        Some(egui::Color32::from_rgba_premultiplied(r, g, b, a))
+        Some(egui::Color32::from_rgba_unmultiplied(r, g, b, a))
     } else {
         None
     }

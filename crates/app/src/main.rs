@@ -226,67 +226,69 @@ impl eframe::App for VortexDeckApp {
                 ..Default::default()
             })
             .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    // --- SINISTRA: Titolo Elegante + Badge Hardware USB + Dirty Dot ---
-                    ui.label(
-                        egui::RichText::new("VortexDeck")
-                            .font(FontId::proportional(15.0))
-                            .strong()
-                            .color(COLOR_TEXT_PRIMARY),
-                    );
+                ui.columns(3, |cols| {
+                    // --- COLONNA 0 (Sinistra): Titolo + Badge Hardware USB ---
+                    cols[0].with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.label(
+                            egui::RichText::new("VortexDeck")
+                                .font(FontId::proportional(15.0))
+                                .strong()
+                                .color(COLOR_TEXT_PRIMARY),
+                        );
 
-                    ui.add_space(8.0);
+                        ui.add_space(8.0);
 
-                    // Badge Hardware USB (interrogato con cooldown di 2s dal coordinator - Bug 3)
-                    let usb_status = self.coordinator.get_usb_status();
-                    match usb_status {
-                        UsbStatus::Ready { vid, pid } => {
-                            let text = format!("● USB Pronta {:04X}:{:04X}", vid, pid);
-                            draw_pill_badge(ui, &text, Color32::from_rgb(20, 42, 28), COLOR_APPLE_GREEN);
-                        }
-                        UsbStatus::DetectedAccessDenied => {
-                            draw_pill_badge(ui, "● USB Accesso Negato", Color32::from_rgb(45, 32, 16), COLOR_APPLE_ORANGE);
-                        }
-                        UsbStatus::Disconnected => {
-                            draw_pill_badge(ui, "● Solo Runtime Host", Color32::from_rgb(34, 34, 38), COLOR_TEXT_SECONDARY);
-                        }
-                    }
-
-                    if self.coordinator.ui_state.is_dirty {
-                        ui.add_space(4.0);
-                        draw_pill_badge(ui, "● Modifiche non salvate", Color32::from_rgb(45, 32, 16), COLOR_APPLE_ORANGE);
-                    }
-
-                    // --- CENTRO: Segmented Controls Stile macOS ---
-                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                        ui.add_space(24.0);
-
-                        // 1. Selettore Layer [ Layer 1 | Layer 2 | Layer 3 ]
-                        let mut current_layer = self.coordinator.ui_state.editing_layer.0;
-                        let layer_opts = [(0u8, "Layer 1"), (1u8, "Layer 2"), (2u8, "Layer 3")];
-                        if segmented_control(ui, &mut current_layer, &layer_opts) {
-                            self.coordinator.ui_state.set_editing_layer(LayerIndex(current_layer));
+                        let usb_status = self.coordinator.get_usb_status();
+                        match usb_status {
+                            UsbStatus::Ready { vid, pid } => {
+                                let text = format!("USB Pronta {:04X}:{:04X}", vid, pid);
+                                draw_pill_badge(ui, &text, Color32::TRANSPARENT, COLOR_APPLE_GREEN);
+                            }
+                            UsbStatus::DetectedAccessDenied => {
+                                draw_pill_badge(ui, "USB Accesso Negato", Color32::TRANSPARENT, COLOR_APPLE_ORANGE);
+                            }
+                            UsbStatus::Disconnected => {
+                                draw_pill_badge(ui, "Solo Runtime Host", Color32::TRANSPARENT, COLOR_TEXT_SECONDARY);
+                            }
                         }
 
-                        ui.add_space(14.0);
-
-                        // 2. Selettore Vista [ Configuratore | Diagnostica | HUD Preview ]
-                        let mut current_view = self.coordinator.ui_state.active_view;
-                        let view_opts = [
-                            (ActiveView::Editor, "Configuratore"),
-                            (ActiveView::Doctor, "Diagnostica"),
-                            (ActiveView::Hud, "HUD Preview"),
-                        ];
-                        if segmented_control(ui, &mut current_view, &view_opts) {
-                            self.coordinator.ui_state.active_view = current_view;
+                        if self.coordinator.ui_state.is_dirty {
+                            ui.add_space(4.0);
+                            draw_pill_badge(ui, "Modifiche non salvate", Color32::TRANSPARENT, COLOR_APPLE_ORANGE);
                         }
                     });
 
-                    // --- DESTRA: Azioni minimali e Pulsante Call-To-Action Blu Apple ---
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        // CTA Blu Scrivi su Dispositivo (Bug 4)
+                    // --- COLONNA 1 (Centro): Segmented Controls perfettamente centrati ---
+                    cols[1].vertical_centered(|ui| {
+                        ui.horizontal(|ui| {
+                            let total_w = 460.0;
+                            let pad = ((ui.available_width() - total_w) * 0.5).max(0.0);
+                            ui.add_space(pad);
+
+                            let mut current_layer = self.coordinator.ui_state.editing_layer.0;
+                            let layer_opts = [(0u8, "Layer 1"), (1u8, "Layer 2"), (2u8, "Layer 3")];
+                            if segmented_control(ui, &mut current_layer, &layer_opts) {
+                                self.coordinator.ui_state.set_editing_layer(LayerIndex(current_layer));
+                            }
+
+                            ui.add_space(10.0);
+
+                            let mut current_view = self.coordinator.ui_state.active_view;
+                            let view_opts = [
+                                (ActiveView::Editor, "Configuratore"),
+                                (ActiveView::Doctor, "Diagnostica"),
+                                (ActiveView::Hud, "HUD Preview"),
+                            ];
+                            if segmented_control(ui, &mut current_view, &view_opts) {
+                                self.coordinator.ui_state.active_view = current_view;
+                            }
+                        });
+                    });
+
+                    // --- COLONNA 2 (Destra): Azioni e Pulsante CTA Blu ---
+                    cols[2].with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let flash_btn = egui::Button::new(
-                            egui::RichText::new("Scrivi su Dispositivo…")
+                            egui::RichText::new("Scrivi su Dispositivo...")
                                 .font(FontId::proportional(12.5))
                                 .strong()
                                 .color(Color32::WHITE),
@@ -313,7 +315,6 @@ impl eframe::App for VortexDeckApp {
 
                         ui.add_space(6.0);
 
-                        // Pulsante Salva
                         if ui.button(egui::RichText::new("Salva").color(COLOR_TEXT_PRIMARY))
                             .on_hover_text("Salva il profilo su disco e sincronizza il motore host.")
                             .clicked()
@@ -321,7 +322,6 @@ impl eframe::App for VortexDeckApp {
                             self.coordinator.save_active_profile();
                         }
 
-                        // Pulsante Valida
                         if ui.button(egui::RichText::new("Valida").color(COLOR_TEXT_PRIMARY))
                             .on_hover_text("Verifica la configurazione con ch57x-keyboard-tool.")
                             .clicked()
@@ -329,7 +329,6 @@ impl eframe::App for VortexDeckApp {
                             self.coordinator.validate_configuration();
                         }
 
-                        // Pulsante Pausa / Riprendi
                         let is_paused = self.coordinator.dispatcher.is_paused();
                         let (pause_lbl, pause_col) = if is_paused {
                             ("Riprendi", COLOR_APPLE_ORANGE)
@@ -411,12 +410,11 @@ impl eframe::App for VortexDeckApp {
         // ---------------------------------------------------------------------
         egui::CentralPanel::default()
             .frame(egui::Frame {
-                fill: Color32::from_rgb(11, 15, 25),
+                fill: COLOR_BG_DEEP,
                 inner_margin: Margin::same(16.0),
                 ..Default::default()
             })
             .show(ctx, |ui| {
-                ch57x_ui::paint_deep_space_canvas(ui.painter(), ui.max_rect());
                 self.studio_ui.show(
                     ui,
                     &mut self.coordinator.ui_state,
@@ -580,11 +578,11 @@ impl eframe::App for VortexDeckApp {
                     |sub_ctx, _class| {
                         egui::CentralPanel::default()
                             .frame(egui::Frame {
-                                fill: Color32::from_rgba_premultiplied(16, 20, 30, 235),
+                                fill: Color32::from_rgba_unmultiplied(16, 20, 30, 235),
                                 rounding: Rounding::same(16.0),
                                 stroke: Stroke::new(
                                     1.0_f32,
-                                    Color32::from_rgba_premultiplied(255, 255, 255, 30),
+                                    Color32::from_rgba_unmultiplied(255, 255, 255, 30),
                                 ),
                                 inner_margin: Margin::same(14.0),
                                 ..Default::default()

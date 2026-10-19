@@ -207,12 +207,7 @@ impl DoctorPanel {
             let center = circle_rect.center();
 
             let color = light.color();
-            let halo = Color32::from_rgba_premultiplied(
-                (color.r() as f32 * 0.25) as u8,
-                (color.g() as f32 * 0.25) as u8,
-                (color.b() as f32 * 0.25) as u8,
-                60,
-            );
+            let halo = Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 45);
 
             ui.painter().circle_filled(center, 7.0, halo);
             ui.painter().circle_filled(center, 4.0, color);

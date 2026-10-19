@@ -108,7 +108,7 @@ impl InspectorPanel {
         let (ident_title, ident_subtitle) = match slot.control {
             ControlId::Button { row, col } => (
                 format!("Tasto [R{}, C{}]", row + 1, col + 1),
-                format!("Layer {} • Matrice Tasti", slot.layer.display_number()),
+                format!("Layer {} - Matrice Tasti", slot.layer.display_number()),
             ),
             ControlId::Encoder { index, event } => {
                 let ev_str = match event {
@@ -117,8 +117,8 @@ impl InspectorPanel {
                     EncoderEvent::Cw => "Rotazione Destra (CW)",
                 };
                 (
-                    format!("Encoder {} — {}", index + 1, ev_str),
-                    format!("Layer {} • Manopola Rotativa", slot.layer.display_number()),
+                    format!("Encoder {} - {}", index + 1, ev_str),
+                    format!("Layer {} - Manopola Rotativa", slot.layer.display_number()),
                 )
             }
         };
@@ -143,7 +143,7 @@ impl InspectorPanel {
                             .color(COLOR_TEXT_PRIMARY),
                     );
                     ui.label(
-                        egui::RichText::new(format!("• {}", ident_subtitle))
+                        egui::RichText::new(format!("- {}", ident_subtitle))
                             .font(FontId::proportional(11.0))
                             .color(COLOR_TEXT_TERTIARY),
                     );
@@ -160,7 +160,7 @@ impl InspectorPanel {
                         marked_dirty = true;
                     }
                 } else {
-                    ui.label("—");
+                    ui.label("-");
                 }
                 ui.end_row();
 
@@ -209,7 +209,7 @@ impl InspectorPanel {
                         }
                     });
                 } else {
-                    ui.label("—");
+                    ui.label("-");
                 }
                 ui.end_row();
             });

@@ -1,99 +1,108 @@
-//! Apple macOS Sequoia / Cupertino Pro Dark Design System Theme
-//!
-//! Fornisce palette colori, stili per i widget egui e helper di disegno
-//! per indicatori geometrici luminosi e pill badges minimali.
+//! Apple macOS Tahoe / visionOS Liquid Glass Theme & Vector Primitives
+//! Zero `from_rgba_premultiplied` con valori non pre-moltiplicati, zero glifi Unicode mancanti.
 
-use egui::{vec2, Color32, Context, FontId, Margin, Pos2, Rect, Rounding, Stroke, Ui, Visuals};
+use egui::{
+    pos2, vec2, Align2, Color32, Context, FontId, Margin, Pos2, Rect, Rounding, Sense, Stroke, Ui,
+    Visuals,
+};
 
-// -----------------------------------------------------------------------------
-// PALETTE COLORI APPLE CUPERTINO PRO DARK
-// -----------------------------------------------------------------------------
+/// Helper const per calcolare il corretto colore premoltiplicato a partire da valori non premoltiplicati
+/// Evita la saturazione additiva della GPU (garantisce sempre r, g, b <= a)
+pub const fn unmultiplied_rgba(r: u8, g: u8, b: u8, a: u8) -> Color32 {
+    let r_pre = ((r as u32 * a as u32 + 127) / 255) as u8;
+    let g_pre = ((g as u32 * a as u32 + 127) / 255) as u8;
+    let b_pre = ((b as u32 * a as u32 + 127) / 255) as u8;
+    Color32::from_rgba_premultiplied(r_pre, g_pre, b_pre, a)
+}
 
-pub const COLOR_OBSIDIAN_BG: Color32 = Color32::from_rgb(28, 28, 30); // #1C1C1E
-pub const COLOR_TOOLBAR_BG: Color32 = Color32::from_rgb(36, 36, 38); // #242426
-pub const COLOR_SURFACE_CARD: Color32 = Color32::from_rgb(44, 44, 46); // #2C2C2E
-pub const COLOR_CONTROL_INACTIVE: Color32 = Color32::from_rgb(58, 58, 60); // #3A3A3C
-pub const COLOR_CONTROL_HOVER: Color32 = Color32::from_rgb(72, 72, 74); // #48484A
-pub const COLOR_BORDER_SUBTLE: Color32 = Color32::from_rgb(56, 56, 58); // #38383A
-pub const COLOR_BORDER_STRONG: Color32 = Color32::from_rgb(84, 84, 88); // #545458
+// Palette Base Deep Space & Liquid Glass
+pub const COLOR_BG_DEEP: Color32 = Color32::from_rgb(10, 12, 18); // #0A0C12
+pub const COLOR_TOOLBAR_BG: Color32 = unmultiplied_rgba(18, 22, 32, 235);
+pub const COLOR_SURFACE_CARD: Color32 = unmultiplied_rgba(26, 31, 44, 185);
+pub const COLOR_SURFACE_ELEVATED: Color32 = unmultiplied_rgba(38, 45, 62, 210);
+pub const COLOR_SURFACE_INSET: Color32 = unmultiplied_rgba(14, 17, 24, 215);
 
-// Colori Semantici Apple
+pub const COLOR_BORDER_SUBTLE: Color32 = unmultiplied_rgba(255, 255, 255, 22);
+pub const COLOR_BORDER_STRONG: Color32 = unmultiplied_rgba(255, 255, 255, 48);
+pub const COLOR_RIM_HIGHLIGHT: Color32 = unmultiplied_rgba(255, 255, 255, 70);
+
+pub const COLOR_CONTROL_INACTIVE: Color32 = unmultiplied_rgba(46, 54, 72, 180);
+pub const COLOR_CONTROL_HOVER: Color32 = unmultiplied_rgba(64, 74, 96, 220);
+
+// Accenti Semantici Apple HIG
 pub const COLOR_APPLE_BLUE: Color32 = Color32::from_rgb(10, 132, 255); // #0A84FF
 pub const COLOR_APPLE_GREEN: Color32 = Color32::from_rgb(48, 209, 88); // #30D158
 pub const COLOR_APPLE_ORANGE: Color32 = Color32::from_rgb(255, 159, 10); // #FF9F0A
 pub const COLOR_APPLE_RED: Color32 = Color32::from_rgb(255, 69, 58); // #FF453A
 pub const COLOR_APPLE_PURPLE: Color32 = Color32::from_rgb(191, 90, 242); // #BF5AF2
-pub const COLOR_APPLE_TEAL: Color32 = Color32::from_rgb(100, 210, 255); // #64D2FF
+pub const COLOR_APPLE_CYAN: Color32 = Color32::from_rgb(100, 210, 255); // #64D2FF
 
 // Tipografia
-pub const COLOR_TEXT_PRIMARY: Color32 = Color32::from_rgb(245, 245, 247); // #F5F5F7
-pub const COLOR_TEXT_SECONDARY: Color32 = Color32::from_rgb(142, 142, 147); // #8E8E93
-pub const COLOR_TEXT_TERTIARY: Color32 = Color32::from_rgb(99, 99, 102); // #636366
+pub const COLOR_TEXT_PRIMARY: Color32 = Color32::from_rgb(245, 247, 250);
+pub const COLOR_TEXT_SECONDARY: Color32 = Color32::from_rgb(152, 160, 176);
+pub const COLOR_TEXT_TERTIARY: Color32 = Color32::from_rgb(98, 106, 122);
 
 // Raggi di curvatura Apple Squircle
 pub const RADIUS_CARD: Rounding = Rounding {
-    nw: 14.0,
-    ne: 14.0,
-    sw: 14.0,
-    se: 14.0,
+    nw: 16.0,
+    ne: 16.0,
+    sw: 16.0,
+    se: 16.0,
 };
 pub const RADIUS_CONTROL: Rounding = Rounding {
-    nw: 8.0,
-    ne: 8.0,
-    sw: 8.0,
-    se: 8.0,
+    nw: 9.0,
+    ne: 9.0,
+    sw: 9.0,
+    se: 9.0,
 };
 pub const RADIUS_PILL: Rounding = Rounding {
-    nw: 12.0,
-    ne: 12.0,
-    sw: 12.0,
-    se: 12.0,
+    nw: 99.0,
+    ne: 99.0,
+    sw: 99.0,
+    se: 99.0,
 };
 
-/// Applica il tema Cupertino Pro Dark completo all'istanza di `egui::Context`
 pub fn apply_cupertino_theme(ctx: &Context) {
     let mut visuals = Visuals::dark();
 
-    // Sfondi finestre e pannelli principali
-    visuals.window_fill = COLOR_OBSIDIAN_BG;
-    visuals.panel_fill = COLOR_OBSIDIAN_BG;
+    visuals.window_fill = COLOR_BG_DEEP;
+    visuals.panel_fill = COLOR_BG_DEEP;
     visuals.faint_bg_color = COLOR_SURFACE_CARD;
-    visuals.extreme_bg_color = Color32::from_rgb(20, 20, 22);
+    visuals.extreme_bg_color = Color32::from_rgb(8, 10, 15);
 
-    // Stile bottoni e controlli interattivi inattivi
+    visuals.widgets.noninteractive.bg_fill = COLOR_SURFACE_CARD;
+    visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, COLOR_BORDER_SUBTLE);
+    visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0_f32, COLOR_TEXT_PRIMARY);
+    visuals.widgets.noninteractive.rounding = RADIUS_CARD;
+
     visuals.widgets.inactive.bg_fill = COLOR_CONTROL_INACTIVE;
-    visuals.widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
+    visuals.widgets.inactive.weak_bg_fill = COLOR_CONTROL_INACTIVE;
     visuals.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, COLOR_BORDER_SUBTLE);
     visuals.widgets.inactive.rounding = RADIUS_CONTROL;
     visuals.widgets.inactive.fg_stroke = Stroke::new(1.0_f32, COLOR_TEXT_PRIMARY);
 
-    // Stile controlli su Hover
     visuals.widgets.hovered.bg_fill = COLOR_CONTROL_HOVER;
-    visuals.widgets.hovered.weak_bg_fill = COLOR_CONTROL_INACTIVE;
+    visuals.widgets.hovered.weak_bg_fill = COLOR_CONTROL_HOVER;
     visuals.widgets.hovered.bg_stroke = Stroke::new(1.0_f32, COLOR_BORDER_STRONG);
     visuals.widgets.hovered.rounding = RADIUS_CONTROL;
-    visuals.widgets.hovered.fg_stroke = Stroke::new(1.0_f32, COLOR_TEXT_PRIMARY);
+    visuals.widgets.hovered.fg_stroke = Stroke::new(1.0_f32, Color32::WHITE);
 
-    // Stile controlli attivi / premuti
     visuals.widgets.active.bg_fill = COLOR_APPLE_BLUE;
-    visuals.widgets.active.bg_stroke = Stroke::new(1.0_f32, COLOR_APPLE_BLUE);
+    visuals.widgets.active.weak_bg_fill = COLOR_APPLE_BLUE;
+    visuals.widgets.active.bg_stroke = Stroke::new(1.0_f32, COLOR_RIM_HIGHLIGHT);
     visuals.widgets.active.rounding = RADIUS_CONTROL;
     visuals.widgets.active.fg_stroke = Stroke::new(1.0_f32, Color32::WHITE);
 
-    // Stile campi aperti / selezionati
-    visuals.widgets.open.bg_fill = COLOR_SURFACE_CARD;
-    visuals.widgets.open.rounding = RADIUS_CONTROL;
-    visuals.widgets.open.bg_stroke = Stroke::new(1.0_f32, COLOR_APPLE_BLUE);
+    visuals.selection.bg_fill = Color32::from_rgba_unmultiplied(10, 132, 255, 90);
+    visuals.selection.stroke = Stroke::new(1.0_f32, COLOR_APPLE_BLUE);
 
-    // Finestre popup e modali
     visuals.window_rounding = RADIUS_CARD;
-    visuals.window_stroke = Stroke::new(1.0_f32, COLOR_BORDER_SUBTLE);
-    visuals.window_shadow.blur = 24.0;
-    visuals.window_shadow.color = Color32::from_black_alpha(160);
+    visuals.window_stroke = Stroke::new(1.0_f32, COLOR_BORDER_STRONG);
+    visuals.window_shadow.blur = 28.0;
+    visuals.window_shadow.color = Color32::from_black_alpha(150);
 
     ctx.set_visuals(visuals);
 
-    // Spaziature ergonomiche macOS
     let mut style = (*ctx.style()).clone();
     style.spacing.item_spacing = vec2(10.0, 10.0);
     style.spacing.button_padding = vec2(14.0, 7.0);
@@ -101,32 +110,17 @@ pub fn apply_cupertino_theme(ctx: &Context) {
     ctx.set_style(style);
 }
 
-// -----------------------------------------------------------------------------
-// HELPER DI DISEGNO GRAFICO MINIMALISTA (ZERO EMOJI)
-// -----------------------------------------------------------------------------
-
-/// Disegna un punto di stato geometrico luminoso con alone soffuso stile Apple
+/// Disegna un punto luminoso vettoriale (senza usare caratteri Unicode `●` che producono `□`)
 pub fn draw_status_dot(ui: &mut Ui, center: Pos2, color: Color32, label: &str) {
     let painter = ui.painter();
-
-    // Alone esterno sfumato (glow)
-    let halo_color = Color32::from_rgba_premultiplied(
-        (color.r() as f32 * 0.25) as u8,
-        (color.g() as f32 * 0.25) as u8,
-        (color.b() as f32 * 0.25) as u8,
-        60,
-    );
-    painter.circle_filled(center, 6.0, halo_color);
-
-    // Nucleo solido centrale
+    let halo = Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 45);
+    painter.circle_filled(center, 6.5, halo);
     painter.circle_filled(center, 3.5, color);
 
-    // Etichetta a destra se presente
     if !label.is_empty() {
-        let text_pos = Pos2::new(center.x + 10.0, center.y);
         painter.text(
-            text_pos,
-            egui::Align2::LEFT_CENTER,
+            pos2(center.x + 11.0, center.y),
+            Align2::LEFT_CENTER,
             label,
             FontId::proportional(12.0),
             COLOR_TEXT_PRIMARY,
@@ -134,93 +128,80 @@ pub fn draw_status_dot(ui: &mut Ui, center: Pos2, color: Color32, label: &str) {
     }
 }
 
-/// Disegna un badge a pillola arrotondata con colore semantico
-pub fn draw_pill_badge(ui: &mut Ui, text: &str, fill_color: Color32, text_color: Color32) -> Rect {
-    let padding = vec2(8.0, 3.0);
+/// Disegna un badge a pillola Liquid Glass con pallino di stato vettoriale integrato opzionale
+pub fn draw_pill_badge(ui: &mut Ui, text: &str, _bg_unused: Color32, accent: Color32) -> Rect {
+    let clean_text = text.trim_start_matches('●').trim_start_matches('□').trim();
+    let has_dot = text.contains('●')
+        || text.contains("USB")
+        || text.contains("Modifiche")
+        || text.contains("Solo");
+
     let galley =
         ui.painter()
-            .layout_no_wrap(text.to_string(), FontId::proportional(11.0), text_color);
+            .layout_no_wrap(clean_text.to_string(), FontId::proportional(11.5), accent);
+
+    let dot_space = if has_dot { 14.0 } else { 0.0 };
+    let padding = vec2(10.0, 5.0);
     let size = vec2(
-        galley.size().x + padding.x * 2.0,
-        galley.size().y + padding.y * 2.0,
+        galley.size().x + padding.x * 2.0 + dot_space,
+        (galley.size().y + padding.y * 2.0).max(24.0),
     );
-    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
 
-    ui.painter().rect_filled(rect, RADIUS_PILL, fill_color);
-    ui.painter().rect_stroke(
-        rect,
-        RADIUS_PILL,
-        Stroke::new(1.0_f32, fill_color.gamma_multiply(1.2)),
-    );
+    let fill = Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 28);
+    let stroke_col = Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 95);
 
-    let text_pos = Pos2::new(rect.center().x, rect.center().y);
-    ui.painter().galley(
-        Pos2::new(
-            text_pos.x - galley.size().x / 2.0,
-            text_pos.y - galley.size().y / 2.0,
-        ),
-        galley,
-        text_color,
-    );
+    ui.painter().rect_filled(rect, RADIUS_PILL, fill);
+    ui.painter()
+        .rect_stroke(rect, RADIUS_PILL, Stroke::new(1.0_f32, stroke_col));
+
+    let mut text_x = rect.min.x + padding.x;
+    if has_dot {
+        let dot_center = pos2(rect.min.x + padding.x + 3.5, rect.center().y);
+        ui.painter().circle_filled(
+            dot_center,
+            5.5,
+            Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 50),
+        );
+        ui.painter().circle_filled(dot_center, 3.0, accent);
+        text_x += dot_space;
+    }
+
+    let text_pos = pos2(text_x, rect.center().y - galley.size().y / 2.0);
+    ui.painter().galley(text_pos, galley, accent);
 
     rect
 }
 
-/// Disegna una scheda raggruppata incassata (Inset Grouped Card) in puro stile Impostazioni macOS
-pub fn inset_grouped_card<R>(
-    ui: &mut Ui,
-    title: Option<&str>,
-    add_contents: impl FnOnce(&mut Ui) -> R,
-) -> R {
-    if let Some(t) = title {
-        ui.label(
-            egui::RichText::new(t.to_uppercase())
-                .font(FontId::proportional(10.5))
-                .color(COLOR_TEXT_SECONDARY)
-                .strong(),
-        );
-        ui.add_space(3.0);
-    }
-
-    let frame = egui::Frame {
-        inner_margin: Margin::same(14.0),
-        rounding: RADIUS_CARD,
-        fill: COLOR_SURFACE_CARD,
-        stroke: Stroke::new(1.0_f32, COLOR_BORDER_SUBTLE),
-        ..Default::default()
-    };
-
-    frame.show(ui, add_contents).inner
-}
-
-/// Segmented Control orizzontale in stile macOS
-pub fn segmented_control<T: PartialEq + Copy>(
+/// Segmented Control stile macOS Tahoe / Liquid Glass Pill
+pub fn segmented_control<T: Copy + PartialEq>(
     ui: &mut Ui,
     selected: &mut T,
     options: &[(T, &str)],
 ) -> bool {
     let mut changed = false;
     let height = 30.0;
-    let container_frame = egui::Frame {
-        inner_margin: Margin::same(2.0),
-        rounding: Rounding::same(8.0),
-        fill: Color32::from_rgb(24, 24, 26),
+
+    let frame = egui::Frame {
+        inner_margin: Margin::same(3.0),
+        rounding: Rounding::same(10.0),
+        fill: COLOR_SURFACE_INSET,
         stroke: Stroke::new(1.0_f32, COLOR_BORDER_SUBTLE),
         ..Default::default()
     };
 
-    container_frame.show(ui, |ui| {
+    frame.show(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
+            ui.spacing_mut().item_spacing = vec2(3.0, 0.0);
             for (val, label) in options {
                 let is_active = *selected == *val;
-                let bg = if is_active {
-                    COLOR_CONTROL_INACTIVE
+                let fill = if is_active {
+                    COLOR_APPLE_BLUE
                 } else {
                     Color32::TRANSPARENT
                 };
-                let text_color = if is_active {
-                    COLOR_TEXT_PRIMARY
+                let text_col = if is_active {
+                    Color32::WHITE
                 } else {
                     COLOR_TEXT_SECONDARY
                 };
@@ -228,17 +209,17 @@ pub fn segmented_control<T: PartialEq + Copy>(
                 let btn = egui::Button::new(
                     egui::RichText::new(*label)
                         .font(FontId::proportional(12.0))
-                        .color(text_color)
+                        .color(text_col)
                         .strong(),
                 )
-                .fill(bg)
+                .fill(fill)
                 .stroke(if is_active {
-                    Stroke::new(1.0_f32, COLOR_BORDER_SUBTLE)
+                    Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(255, 255, 255, 70))
                 } else {
                     Stroke::NONE
                 })
-                .rounding(Rounding::same(6.0))
-                .min_size(vec2(0.0, height - 4.0));
+                .rounding(Rounding::same(7.0))
+                .min_size(vec2(0.0, height - 6.0));
 
                 if ui.add(btn).clicked() {
                     *selected = *val;
@@ -249,4 +230,12 @@ pub fn segmented_control<T: PartialEq + Copy>(
     });
 
     changed
+}
+
+pub fn inset_grouped_card<R>(
+    ui: &mut Ui,
+    title: Option<&str>,
+    add_contents: impl FnOnce(&mut Ui) -> R,
+) -> R {
+    crate::liquid_glass::liquid_glass_card(ui, title, add_contents)
 }

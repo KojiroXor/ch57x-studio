@@ -44,7 +44,7 @@ impl HudWindow {
             .frame(egui::Frame {
                 inner_margin: egui::Margin::same(14.0),
                 rounding: Rounding::same(16.0),
-                fill: Color32::from_rgba_premultiplied(28, 28, 30, 235),
+                fill: Color32::from_rgba_unmultiplied(28, 28, 30, 235),
                 stroke: Stroke::new(1.0_f32, COLOR_BORDER_SUBTLE),
                 ..Default::default()
             })
@@ -203,7 +203,7 @@ impl HudWindow {
 
                                 // Label al centro
                                 let display_lbl = if label.chars().count() > 6 {
-                                    format!("{}…", label.chars().take(5).collect::<String>())
+                                    format!("{}..", label.chars().take(5).collect::<String>())
                                 } else {
                                     label.to_string()
                                 };
@@ -255,9 +255,9 @@ impl HudWindow {
         );
 
         // Label tasto
-        let label_text = config.map(|c| c.label.as_str()).unwrap_or("—");
+        let label_text = config.map(|c| c.label.as_str()).unwrap_or("-");
         let display_lbl = if label_text.chars().count() > 8 {
-            format!("{}…", label_text.chars().take(7).collect::<String>())
+            format!("{}..", label_text.chars().take(7).collect::<String>())
         } else {
             label_text.to_string()
         };

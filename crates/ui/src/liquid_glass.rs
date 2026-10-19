@@ -1,234 +1,129 @@
-//! Apple Liquid Glass Engine (visionOS / macOS Tahoe inspired)
-//!
-//! Fornisce rendering vettoriale ad alte prestazioni per superfici traslucide stile Apple:
-//! - Deep Space Canvas (sfondo con gradiente radiale multi-punto e bagliori soffusi)
-//! - Card traslucide con rifrazione speculare direzionale (rim light 1.2px)
-//! - Riflesso interno (Inner Highlight) per curvature organiche
-//! - Ombre profonde e morbide (blur 32px, offset Y 10px)
-//! - Controlli segmentati e pillole animate con interpolazione temporale fluida (0.18s)
+//! Motore Apple Liquid Glass (visionOS / macOS Tahoe)
+//! Usa Mesh di Gouraud a 9 vertici per uno sfondo morbido continuo (ZERO cerchi bersaglio!)
+//! e disegna il Rim Light DOPO il layout della Card usando `response.rect`.
 
-use crate::theme::{COLOR_APPLE_BLUE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY};
-use egui::{pos2, vec2, Color32, FontId, Margin, Rect, Rounding, Sense, Stroke, Ui};
+use crate::theme::*;
+use egui::{pos2, vec2, Color32, FontId, Margin, Mesh, Rect, Rounding, Sense, Shape, Stroke, Ui};
 
-/// Dipinge il Deep Space Canvas multi-punto sul rettangolo assegnato
+/// Disegna uno sfondo atmosferico scuro continuo tramite interpolazione di vertici (Mesh 3x3).
+/// Nessun cerchio sovrapposto, nessuna saturazione premoltiplicata.
 pub fn paint_deep_space_canvas(painter: &egui::Painter, rect: Rect) {
-    let c_top_left = Color32::from_rgb(11, 15, 25); // #0B0F19
-    let c_bottom_right = Color32::from_rgb(19, 27, 46); // #131B2E
+    let mut mesh = Mesh::default();
 
-    let mut mesh = egui::Mesh::default();
-    mesh.add_rect_with_uv(
-        rect,
-        Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
-        c_top_left,
-    );
-    if mesh.vertices.len() >= 4 {
-        mesh.vertices[0].color = c_top_left;
-        mesh.vertices[1].color = Color32::from_rgb(15, 21, 35);
-        mesh.vertices[2].color = c_bottom_right;
-        mesh.vertices[3].color = Color32::from_rgb(14, 19, 32);
-    }
-    painter.add(egui::Shape::mesh(mesh));
+    let x0 = rect.min.x;
+    let x1 = rect.center().x;
+    let x2 = rect.max.x;
 
-    // Bagliore 1: Blu Apple soffuso in alto a sinistra
-    let center_glow1 = pos2(
-        rect.min.x + rect.width() * 0.22,
-        rect.min.y + rect.height() * 0.28,
-    );
-    for (r, a) in [(180.0, 16u8), (280.0, 10u8), (400.0, 5u8)] {
-        painter.circle_filled(
-            center_glow1,
-            r,
-            Color32::from_rgba_premultiplied(10, 132, 255, a),
-        );
+    let y0 = rect.min.y;
+    let y1 = rect.center().y;
+    let y2 = rect.max.y;
+
+    // 9 punti per un gradiente atmosferico Apple Tahoe ultra-morbido
+    let pts = [
+        (pos2(x0, y0), Color32::from_rgb(13, 19, 33)), // Top-Left: Deep Midnight Blue
+        (pos2(x1, y0), Color32::from_rgb(16, 24, 42)), // Top-Center: Subtle Indigo Sheen
+        (pos2(x2, y0), Color32::from_rgb(12, 16, 28)), // Top-Right: Obsidian
+        (pos2(x0, y1), Color32::from_rgb(11, 16, 27)), // Mid-Left
+        (pos2(x1, y1), Color32::from_rgb(18, 26, 46)), // Center: Soft Ambient Glow
+        (pos2(x2, y1), Color32::from_rgb(14, 18, 32)), // Mid-Right
+        (pos2(x0, y2), Color32::from_rgb(9, 12, 20)),  // Bottom-Left
+        (pos2(x1, y2), Color32::from_rgb(12, 17, 29)), // Bottom-Center
+        (pos2(x2, y2), Color32::from_rgb(15, 20, 36)), // Bottom-Right
+    ];
+
+    for (pos, color) in pts {
+        mesh.colored_vertex(pos, color);
     }
 
-    // Bagliore 2: Indaco/Viola soffuso in basso a destra
-    let center_glow2 = pos2(
-        rect.max.x - rect.width() * 0.25,
-        rect.max.y - rect.height() * 0.25,
-    );
-    for (r, a) in [(200.0, 14u8), (320.0, 8u8), (450.0, 4u8)] {
-        painter.circle_filled(
-            center_glow2,
-            r,
-            Color32::from_rgba_premultiplied(94, 92, 230, a),
-        );
+    // 4 quadranti = 8 triangoli
+    let quads = [(0, 1, 4, 3), (1, 2, 5, 4), (3, 4, 7, 6), (4, 5, 8, 7)];
+    for (a, b, c, d) in quads {
+        mesh.add_triangle(a, b, c);
+        mesh.add_triangle(a, c, d);
     }
+
+    painter.add(Shape::mesh(mesh));
 }
 
-/// Disegna la rifrazione speculare direzionale e il riflesso interno sul bordo di una card
+/// Disegna la rifrazione speculare Liquid Glass attorno al rettangolo FINALE di una card
 pub fn paint_specular_rim_light(painter: &egui::Painter, rect: Rect, rounding: Rounding) {
-    let r = rounding.nw.max(4.0);
+    if rect.width() <= 4.0 || rect.height() <= 4.0 {
+        return;
+    }
 
-    // 1. Specular Top Rim Light (brillante, 1.2px, rgba(255, 255, 255, 0.28))
-    painter.line_segment(
-        [
-            pos2(rect.min.x + r, rect.min.y),
-            pos2(rect.max.x - r, rect.min.y),
-        ],
-        Stroke::new(1.2_f32, Color32::from_rgba_premultiplied(255, 255, 255, 72)),
-    );
-
-    // 2. Specular Left Rim Light (semi-brillante, 1.2px, rgba(255, 255, 255, 0.20))
-    painter.line_segment(
-        [
-            pos2(rect.min.x, rect.min.y + r),
-            pos2(rect.min.x, rect.max.y - r),
-        ],
-        Stroke::new(1.2_f32, Color32::from_rgba_premultiplied(255, 255, 255, 50)),
+    // 1. Bordo perimetrale continuo completo (rispetta esattamente gli angoli arrotondati)
+    painter.rect_stroke(
+        rect,
+        rounding,
+        Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(255, 255, 255, 34)),
     );
 
-    // 3. Bottom & Right subtle edge (degrada verso 0.06 alpha = ~15)
-    painter.line_segment(
-        [
-            pos2(rect.min.x + r, rect.max.y),
-            pos2(rect.max.x - r, rect.max.y),
-        ],
-        Stroke::new(1.0_f32, Color32::from_rgba_premultiplied(255, 255, 255, 15)),
-    );
-    painter.line_segment(
-        [
-            pos2(rect.max.x, rect.min.y + r),
-            pos2(rect.max.x, rect.max.y - r),
-        ],
-        Stroke::new(1.0_f32, Color32::from_rgba_premultiplied(255, 255, 255, 15)),
-    );
-
-    // 4. Riflesso interno (Inner Highlight a 1.5px sotto il bordo superiore)
-    painter.line_segment(
-        [
-            pos2(rect.min.x + r + 6.0, rect.min.y + 1.5),
-            pos2(rect.max.x - r - 6.0, rect.min.y + 1.5),
-        ],
-        Stroke::new(1.0_f32, Color32::from_rgba_premultiplied(255, 255, 255, 38)),
-    );
+    // 2. Riflesso speculare superiore interno (effetto lastra di vetro illuminata dall'alto)
+    let r = rounding.nw.max(6.0);
+    let top_y = rect.min.y + 1.0;
+    if rect.width() > r * 2.5 {
+        painter.line_segment(
+            [pos2(rect.min.x + r, top_y), pos2(rect.max.x - r, top_y)],
+            Stroke::new(1.2_f32, Color32::from_rgba_unmultiplied(255, 255, 255, 75)),
+        );
+    }
 }
 
-/// Contenitore Liquid Glass Card con effetto vetro smerigliato e rifrazione speculare
+/// Contenitore Liquid Glass Card stile macOS Tahoe / visionOS
 pub fn liquid_glass_card<R>(
     ui: &mut Ui,
     title: Option<&str>,
     add_contents: impl FnOnce(&mut Ui) -> R,
 ) -> R {
-    if let Some(t) = title {
-        ui.horizontal(|ui| {
-            ui.add_space(2.0);
+    let rounding = RADIUS_CARD;
+
+    let frame = egui::Frame {
+        inner_margin: Margin::same(18.0),
+        outer_margin: Margin::symmetric(0.0, 4.0),
+        rounding,
+        fill: COLOR_SURFACE_CARD,
+        stroke: Stroke::new(1.0_f32, COLOR_BORDER_SUBTLE),
+        shadow: egui::epaint::Shadow {
+            blur: 24.0,
+            offset: vec2(0.0, 8.0),
+            color: Color32::from_black_alpha(110),
+            ..Default::default()
+        },
+    };
+
+    let response = frame.show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        if let Some(t) = title {
             ui.label(
                 egui::RichText::new(t.to_uppercase())
                     .font(FontId::proportional(11.0))
-                    .color(COLOR_TEXT_SECONDARY)
-                    .strong(),
+                    .strong()
+                    .color(COLOR_APPLE_CYAN),
             );
-        });
-        ui.add_space(3.0);
-    }
+            ui.add_space(6.0);
+            ui.separator();
+            ui.add_space(8.0);
+        }
+        add_contents(ui)
+    });
 
-    let frame = egui::Frame {
-        inner_margin: Margin::same(16.0),
-        rounding: Rounding::same(16.0),
-        fill: Color32::from_rgba_premultiplied(38, 42, 54, 155),
-        stroke: Stroke::new(1.0_f32, Color32::from_rgba_premultiplied(255, 255, 255, 18)),
-        shadow: egui::epaint::Shadow {
-            offset: vec2(0.0, 10.0),
-            blur: 32.0,
-            spread: 0.0,
-            color: Color32::from_black_alpha(115),
-        },
-        ..Default::default()
-    };
+    // Disegna il rim light speculare sul rettangolo REALE finale calcolato da Frame::show
+    paint_specular_rim_light(ui.painter(), response.response.rect, rounding);
 
-    let res = frame.show(ui, add_contents);
-    paint_specular_rim_light(ui.painter(), res.response.rect, Rounding::same(16.0));
-    res.inner
+    response.inner
 }
 
-/// Segmented Control orizzontale in stile Liquid Glass con pillola fluida animata (0.18s)
+/// Segmented Control compatibile con inspector
 pub fn liquid_segmented_control<T: PartialEq + Copy>(
     ui: &mut Ui,
-    id_salt: impl std::hash::Hash,
+    _id_salt: impl std::hash::Hash,
     selected: &mut T,
     options: &[(T, &str)],
 ) -> bool {
-    let mut changed = false;
-    let container_id = ui.make_persistent_id(id_salt);
-    let height = 32.0;
-
-    let container_frame = egui::Frame {
-        inner_margin: Margin::same(3.0),
-        rounding: Rounding::same(10.0),
-        fill: Color32::from_rgba_premultiplied(22, 26, 36, 190),
-        stroke: Stroke::new(1.0_f32, Color32::from_rgba_premultiplied(255, 255, 255, 22)),
-        ..Default::default()
-    };
-
-    container_frame.show(ui, |ui| {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing = vec2(3.0, 0.0);
-            for (idx, (val, label)) in options.iter().enumerate() {
-                let is_active = *selected == *val;
-                let opt_id = container_id.with(idx);
-                let anim = ui.ctx().animate_bool_with_time(opt_id, is_active, 0.18);
-
-                let active_alpha = (anim * 230.0) as u8;
-                let text_color = if anim > 0.4 {
-                    Color32::WHITE
-                } else {
-                    COLOR_TEXT_SECONDARY
-                };
-
-                let galley = ui.painter().layout_no_wrap(
-                    label.to_string(),
-                    FontId::proportional(12.0),
-                    text_color,
-                );
-                let desired_w = galley.size().x + 20.0;
-                let (rect, resp) =
-                    ui.allocate_exact_size(vec2(desired_w, height - 6.0), Sense::click());
-
-                if anim > 0.01 {
-                    let pill_fill = Color32::from_rgba_premultiplied(10, 132, 255, active_alpha);
-                    ui.painter()
-                        .rect_filled(rect, Rounding::same(8.0), pill_fill);
-
-                    // Micro-bordo superiore illuminato su pillola attiva
-                    let rim_alpha = (anim * 110.0) as u8;
-                    ui.painter().line_segment(
-                        [
-                            pos2(rect.min.x + 3.0, rect.min.y + 0.5),
-                            pos2(rect.max.x - 3.0, rect.min.y + 0.5),
-                        ],
-                        Stroke::new(
-                            1.0_f32,
-                            Color32::from_rgba_premultiplied(255, 255, 255, rim_alpha),
-                        ),
-                    );
-                } else if resp.hovered() {
-                    // Hover state: alone bianco sfumato al 10%
-                    ui.painter().rect_filled(
-                        rect,
-                        Rounding::same(8.0),
-                        Color32::from_rgba_premultiplied(255, 255, 255, 25),
-                    );
-                }
-
-                let text_pos = pos2(
-                    rect.center().x - galley.size().x / 2.0,
-                    rect.center().y - galley.size().y / 2.0,
-                );
-                ui.painter().galley(text_pos, galley, text_color);
-
-                if resp.clicked() && !is_active {
-                    *selected = *val;
-                    changed = true;
-                }
-            }
-        });
-    });
-
-    changed
+    crate::theme::segmented_control(ui, selected, options)
 }
 
-/// Pulsante a pillola Liquid Glass con micro-riflessi e feedback fluido
+/// Pulsante a pillola Liquid Glass con unmultiplied colors
 pub fn liquid_pill_button(ui: &mut Ui, text: &str, is_accent: bool) -> egui::Response {
     let padding = vec2(14.0, 7.0);
     let galley = ui.painter().layout_no_wrap(
@@ -254,39 +149,37 @@ pub fn liquid_pill_button(ui: &mut Ui, text: &str, is_accent: bool) -> egui::Res
         } else {
             (
                 COLOR_APPLE_BLUE,
-                Color32::from_rgba_premultiplied(255, 255, 255, 60),
+                Color32::from_rgba_unmultiplied(255, 255, 255, 60),
             )
         }
+    } else if resp.is_pointer_button_down_on() {
+        (
+            Color32::from_rgba_unmultiplied(50, 55, 70, 220),
+            Color32::from_rgba_unmultiplied(255, 255, 255, 40),
+        )
+    } else if resp.hovered() {
+        (
+            Color32::from_rgba_unmultiplied(60, 66, 85, 200),
+            Color32::from_rgba_unmultiplied(255, 255, 255, 60),
+        )
     } else {
-        if resp.is_pointer_button_down_on() {
-            (
-                Color32::from_rgba_premultiplied(50, 55, 70, 220),
-                Color32::from_rgba_premultiplied(255, 255, 255, 40),
-            )
-        } else if resp.hovered() {
-            (
-                Color32::from_rgba_premultiplied(60, 66, 85, 200),
-                Color32::from_rgba_premultiplied(255, 255, 255, 60),
-            )
-        } else {
-            (
-                Color32::from_rgba_premultiplied(38, 42, 54, 180),
-                Color32::from_rgba_premultiplied(255, 255, 255, 25),
-            )
-        }
+        (
+            Color32::from_rgba_unmultiplied(38, 42, 54, 180),
+            Color32::from_rgba_unmultiplied(255, 255, 255, 25),
+        )
     };
 
     ui.painter().rect_filled(rect, Rounding::same(8.0), fill);
     ui.painter()
         .rect_stroke(rect, Rounding::same(8.0), Stroke::new(1.0_f32, stroke_col));
 
-    // Specular top edge highlight
+    let top_highlight = [
+        pos2(rect.min.x + 3.0, rect.min.y + 0.5),
+        pos2(rect.max.x - 3.0, rect.min.y + 0.5),
+    ];
     ui.painter().line_segment(
-        [
-            pos2(rect.min.x + 3.0, rect.min.y + 0.5),
-            pos2(rect.max.x - 3.0, rect.min.y + 0.5),
-        ],
-        Stroke::new(1.0_f32, Color32::from_rgba_premultiplied(255, 255, 255, 70)),
+        top_highlight,
+        Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(255, 255, 255, 70)),
     );
 
     let text_pos = pos2(
