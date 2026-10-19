@@ -114,6 +114,10 @@ impl HotkeyBackend for WindowsHotkeysBackend {
     fn unregister_all(&self) -> Result<(), PlatformError> {
         self.unregister_all()
     }
+
+    fn subscribe(&self) -> crossbeam_channel::Receiver<PhantomTrigger> {
+        hotkeys::subscribe_hotkeys()
+    }
 }
 
 pub struct WindowsWindowManager;

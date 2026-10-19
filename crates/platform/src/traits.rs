@@ -22,6 +22,8 @@ pub trait HotkeyBackend: Send + Sync {
         triggers: &[PhantomTrigger],
     ) -> Result<Vec<PhantomTrigger>, PlatformError>;
     fn unregister_all(&self) -> Result<(), PlatformError>;
+    /// Sottoscrive il ricevitore per gli eventi trigger hardware/hotkey ricevuti in tempo reale.
+    fn subscribe(&self) -> crossbeam_channel::Receiver<PhantomTrigger>;
 }
 
 pub trait WindowManagerBackend: Send + Sync {

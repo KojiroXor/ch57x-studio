@@ -67,6 +67,11 @@ impl HotkeyBackend for LinuxPlatform {
     fn unregister_all(&self) -> Result<(), PlatformError> {
         Ok(())
     }
+
+    fn subscribe(&self) -> crossbeam_channel::Receiver<PhantomTrigger> {
+        let (_tx, rx) = crossbeam_channel::unbounded();
+        rx
+    }
 }
 
 impl WindowManagerBackend for LinuxPlatform {

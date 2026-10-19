@@ -9,7 +9,9 @@
 //! - La registrazione delle hotkey globali F13..F24 (`ch57x-platform`)
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use tracing::{error, info, warn};
 
@@ -20,7 +22,7 @@ use ch57x_domain::profile::Profile;
 use ch57x_domain::triggers::PhantomTrigger;
 use ch57x_domain::validation::validate_profile;
 use ch57x_hardware::cli_adapter::Ch57xCli;
-use ch57x_hardware::usb_probe::probe_usb_status;
+use ch57x_hardware::usb_probe::{probe_usb_status, UsbStatus};
 use ch57x_persistence::journal::DeploymentJournal;
 use ch57x_persistence::storage::{get_app_data_dir, get_profiles_dir, load_profile_from_path, save_profile_to_path};
 use ch57x_persistence::trust::TrustStore;
@@ -28,6 +30,16 @@ use ch57x_platform::get_platform;
 use ch57x_platform::traits::PlatformBackend;
 use ch57x_runtime::dispatcher::RuntimeDispatcher;
 use ch57x_ui::state::{StatusLevel, UiState};
+
+#[derive(Debug, Clone)]
+pub struct HardwareFlashPreview {
+    pub yaml_str: String,
+    pub current_hash: String,
+    #[allow(dead_code)]
+    pub last_hash: Option<String>,
+    pub requires_hardware_flash: bool,
+    pub modified_slots_count: usize,
+}
 
 #[allow(dead_code)]
 pub enum CoordinatorCommand {
@@ -39,6 +51,8 @@ pub enum CoordinatorCommand {
     SwitchLayer(u8),
     ShowHud,
     Quit,
+    FlashSuccess,
+    FlashFailed(String),
 }
 
 pub struct AppCoordinator {
@@ -54,6 +68,9 @@ pub struct AppCoordinator {
     pub command_sender: Sender<CoordinatorCommand>,
     pub command_receiver: Receiver<CoordinatorCommand>,
     pub profile_path: PathBuf,
+    pub cached_usb_status: UsbStatus,
+    pub last_usb_poll: Instant,
+    pub is_flashing: Arc<AtomicBool>,
 }
 
 impl AppCoordinator {
@@ -80,7 +97,9 @@ impl AppCoordinator {
         } else {
             info!("Nessun profilo trovato, inizializzazione profilo default a 54 slot");
             let mut def = Profile::default();
-            let _ = allocate_triggers(&mut def);
+            if let Err(e) = allocate_triggers(&mut def) {
+                warn!("Errore prima allocazione trigger default: {:?}", e);
+            }
             let _ = save_profile_to_path(&def, &profile_path);
             def
         };
@@ -90,15 +109,14 @@ impl AppCoordinator {
             .with_vendor_id(0x1189)
             .with_product_id(0x8890);
 
-        let platform_inst = get_platform();
-        let platform: Arc<dyn PlatformBackend> = Arc::new(platform_inst);
+        // Singola istanza condivisa di Platform
+        let platform_inst = Arc::new(get_platform());
+        let platform: Arc<dyn PlatformBackend> = platform_inst.clone();
 
-        // RuntimeDispatcher requires Arc<dyn WindowManagerBackend> and Arc<dyn InputInjectorBackend>
-        // Let's create actors or dispatch directly
         let dispatcher = Arc::new(RuntimeDispatcher::new(
             profile.clone(),
-            Arc::new(get_platform()),
-            Arc::new(get_platform()),
+            platform_inst.clone(),
+            platform_inst,
         ));
 
         let (command_sender, command_receiver) = unbounded();
@@ -127,6 +145,29 @@ impl AppCoordinator {
             ui_state.set_status("Avviato in Safe Mode (Hotkey disabilitate)", StatusLevel::Info);
         }
 
+        // Thread dedicato background per l'inoltro diretto delle hotkey a RuntimeDispatcher (Bug 1 & 2)
+        let hotkey_rx = platform.hotkeys().subscribe();
+        let disp_bg = dispatcher.clone();
+        let cmd_tx_bg = command_sender.clone();
+
+        std::thread::Builder::new()
+            .name("vortexdeck-hotkey-forwarder".into())
+            .spawn(move || {
+                while let Ok(trigger) = hotkey_rx.recv() {
+                    // 1. Inoltro immediato a RuntimeDispatcher sul thread background
+                    let _ = disp_bg.trigger_received(trigger);
+                    // 2. Notifica alla UI per evidenziare il controllo o visualizzare l'OSD
+                    let _ = cmd_tx_bg.send(CoordinatorCommand::TriggerEvent(trigger));
+                    // 3. Risveglio immediato del renderer egui/eframe
+                    crate::tray::notify_repaint();
+                }
+            })
+            .expect("Failed to spawn hotkey forwarder thread");
+
+        let cached_usb_status = probe_usb_status();
+        let last_usb_poll = Instant::now();
+        let is_flashing = Arc::new(AtomicBool::new(false));
+
         Ok(Self {
             profile,
             ui_state,
@@ -139,7 +180,26 @@ impl AppCoordinator {
             command_sender,
             command_receiver,
             profile_path,
+            cached_usb_status,
+            last_usb_poll,
+            is_flashing,
         })
+    }
+
+    /// Rilevamento USB con cache a 2 secondi (Bug 3)
+    pub fn get_usb_status(&mut self) -> UsbStatus {
+        if self.last_usb_poll.elapsed() >= Duration::from_secs(2) {
+            self.cached_usb_status = probe_usb_status();
+            if let UsbStatus::Ready { vid, pid } = self.cached_usb_status {
+                self.cli = self.cli.clone().with_vendor_id(vid).with_product_id(pid);
+            }
+            self.last_usb_poll = Instant::now();
+        }
+        self.cached_usb_status.clone()
+    }
+
+    pub fn is_flashing(&self) -> bool {
+        self.is_flashing.load(Ordering::SeqCst)
     }
 
     /// Processa tutti i comandi in coda non-bloccanti
@@ -148,16 +208,21 @@ impl AppCoordinator {
             match cmd {
                 CoordinatorCommand::TriggerEvent(trigger) => {
                     info!("Ricevuto trigger hardware/virtuale: {}", trigger.yaml_token());
-                    let _ = self.dispatcher.trigger_received(trigger);
+                    // Visual feedback nella UI: seleziona lo slot corrispondente se presente
+                    if let Some((&slot_idx, _)) = self.ui_state.profile.trigger_allocation.iter().find(|(_, &t)| t == trigger) {
+                        if let Some(slot_cfg) = self.ui_state.profile.slots.get(&slot_idx) {
+                            self.ui_state.selected_slot = Some(slot_cfg.slot);
+                        }
+                    }
                 }
                 CoordinatorCommand::SaveProfile => {
                     self.save_active_profile();
                 }
                 CoordinatorCommand::ValidateYaml => {
-                    self.validate_configuration();
+                    let _ = self.validate_configuration();
                 }
                 CoordinatorCommand::UploadToDevice => {
-                    self.upload_configuration_to_device();
+                    // Avviato tramite modal di conferma
                 }
                 CoordinatorCommand::TogglePause => {
                     let was_paused = self.dispatcher.is_paused();
@@ -177,7 +242,16 @@ impl AppCoordinator {
                     self.ui_state.active_view = ch57x_ui::state::ActiveView::Hud;
                 }
                 CoordinatorCommand::Quit => {
-                    std::process::exit(0);
+                    // Chiusura pulita gestita dal loop dell'app senza exit(0)
+                }
+                CoordinatorCommand::FlashSuccess => {
+                    self.save_active_profile();
+                    self.journal = DeploymentJournal::load_or_recover(&self.base_dir).unwrap_or_default();
+                    self.ui_state.set_status("Flashing hardware completato con SUCCESSO!", StatusLevel::Success);
+                }
+                CoordinatorCommand::FlashFailed(err) => {
+                    self.journal = DeploymentJournal::load_or_recover(&self.base_dir).unwrap_or_default();
+                    self.ui_state.set_status(format!("Flashing fallito: {err}"), StatusLevel::Error);
                 }
             }
         }
@@ -187,21 +261,25 @@ impl AppCoordinator {
     pub fn save_active_profile(&mut self) -> bool {
         self.profile = self.ui_state.profile.clone();
 
+        // Alloca eventuali trigger mancanti con gestione errore (Bug 8)
+        if let Err(e) = allocate_triggers(&mut self.profile) {
+            self.ui_state.set_status(format!("Allocazione trigger fallita: {}", e), StatusLevel::Error);
+            return false;
+        }
+
         // Verifica semantica prima del salvataggio
         if let Err(e) = validate_profile(&self.profile) {
             self.ui_state.set_status(format!("Validazione fallita: {}", e), StatusLevel::Error);
             return false;
         }
 
-        // Alloca eventuali trigger mancanti
-        let _ = allocate_triggers(&mut self.profile);
         self.ui_state.profile = self.profile.clone();
 
         match save_profile_to_path(&self.profile, &self.profile_path) {
             Ok(_) => {
                 self.ui_state.clear_dirty();
                 self.dispatcher.set_profile(self.profile.clone());
-                self.ui_state.set_status("Profilo salvato e runtime aggiornato.", StatusLevel::Success);
+                self.ui_state.set_status("Profilo salvato e runtime host aggiornato.", StatusLevel::Success);
 
                 // Aggiorna registrazione hotkeys
                 let triggers: Vec<PhantomTrigger> = self.profile.trigger_allocation.values().copied().collect();
@@ -220,7 +298,10 @@ impl AppCoordinator {
     /// Genera e valida il YAML di configurazione con ch57x-keyboard-tool
     pub fn validate_configuration(&mut self) -> Option<String> {
         let mut profile = self.ui_state.profile.clone();
-        let _ = allocate_triggers(&mut profile);
+        if let Err(e) = allocate_triggers(&mut profile) {
+            self.ui_state.set_status(format!("Errore allocazione trigger: {:?}", e), StatusLevel::Error);
+            return None;
+        }
 
         let yaml_str = match generate_yaml(&profile) {
             Ok(y) => y,
@@ -242,62 +323,74 @@ impl AppCoordinator {
         }
     }
 
-    /// Esegue il flashing sicuro su dispositivo fisico previa verifica del journal
-    pub fn upload_configuration_to_device(&mut self) -> bool {
-        let status = probe_usb_status();
-        if !status.is_ready() {
-            self.ui_state.set_status(
-                "Impossibile flashare: Macropad non collegato via USB o UsbDk assente.",
-                StatusLevel::Error,
-            );
-            return false;
-        }
+    /// Genera la preview per il modal di conferma flashing hardware (Bug 4)
+    pub fn generate_flash_preview(&mut self) -> Result<HardwareFlashPreview, String> {
+        let mut profile = self.ui_state.profile.clone();
+        allocate_triggers(&mut profile).map_err(|e| format!("Allocazione trigger fallita: {e}"))?;
 
-        let yaml_str = match self.validate_configuration() {
-            Some(y) => y,
-            None => return false,
-        };
+        let yaml_str = generate_yaml(&profile).map_err(|e| format!("Generazione YAML fallita: {e}"))?;
+        self.cli.validate(&yaml_str).map_err(|e| format!("Validazione hardware CLI fallita: {e}"))?;
 
         let last_hash = self.journal.last_uploaded_yaml_hash.clone();
         let decision = DeploymentDecision::new(&yaml_str, last_hash.as_deref());
 
-        if !decision.requires_hardware_flash {
-            self.ui_state.set_status(
-                "Nessuna modifica hardware: tastiera già aggiornata. Salvataggio host completato.",
-                StatusLevel::Info,
-            );
-            self.save_active_profile();
-            return true;
+        let modified_slots = profile.slots.iter().filter(|(_, s)| !matches!(s.binding, ch57x_domain::actions::SlotBinding::Disabled)).count();
+
+        Ok(HardwareFlashPreview {
+            yaml_str,
+            current_hash: decision.current_yaml_hash,
+            last_hash,
+            requires_hardware_flash: decision.requires_hardware_flash,
+            modified_slots_count: modified_slots,
+        })
+    }
+
+    /// Esegue il flashing hardware in un thread background non-bloccante (Bug 4)
+    pub fn start_hardware_flash(&mut self, yaml_str: String, current_hash: String) -> Result<(), String> {
+        if self.is_flashing() {
+            return Err("Operazione di flashing già in corso!".into());
         }
 
+        let is_flashing = self.is_flashing.clone();
+        let cli = self.cli.clone();
+        let mut journal = self.journal.clone();
         let base_dir = self.base_dir.clone();
+        let cmd_tx = self.command_sender.clone();
 
-        // Transizione di stato Journal: WritingHardwareFlash
-        if let Err(e) = self.journal.start_deployment(Some(&base_dir)) {
-            self.ui_state.set_status(format!("Journal start error: {:?}", e), StatusLevel::Error);
-            return false;
-        }
+        is_flashing.store(true, Ordering::SeqCst);
+        self.ui_state.set_status("Scrittura memoria flash hardware in corso...", StatusLevel::Warning);
 
-        if let Err(e) = self.journal.step_to_hardware_flash(Some(&base_dir)) {
-            self.ui_state.set_status(format!("Journal flash step error: {:?}", e), StatusLevel::Error);
-            return false;
-        }
+        std::thread::Builder::new()
+            .name("vortexdeck-hardware-flasher".into())
+            .spawn(move || {
+                let outcome = (|| -> Result<(), String> {
+                    let _ = journal.start_deployment(Some(&base_dir));
+                    let _ = journal.step_to_hardware_flash(Some(&base_dir));
 
-        info!("Inizio flashing hardware su memoria dispositivo...");
-        match self.cli.upload(&yaml_str) {
-            Ok(_) => {
-                let _ = self.journal.step_to_activating_runtime(Some(decision.current_yaml_hash), Some(&base_dir));
-                let _ = self.journal.step_to_success(Some(&base_dir));
-                self.save_active_profile();
-                self.ui_state.set_status("Flashing hardware completato con SUCCESSO!", StatusLevel::Success);
-                true
-            }
-            Err(e) => {
-                error!("Flashing hardware fallito: {}", e);
-                let _ = self.journal.step_to_failed(e.to_string(), Some(&base_dir));
-                self.ui_state.set_status(format!("Flashing fallito: {}", e), StatusLevel::Error);
-                false
-            }
-        }
+                    cli.upload(&yaml_str).map_err(|e| e.to_string())?;
+
+                    let _ = journal.step_to_activating_runtime(Some(current_hash), Some(&base_dir));
+                    let _ = journal.step_to_success(Some(&base_dir));
+                    Ok(())
+                })();
+
+                is_flashing.store(false, Ordering::SeqCst);
+
+                match outcome {
+                    Ok(_) => {
+                        let _ = cmd_tx.send(CoordinatorCommand::FlashSuccess);
+                    }
+                    Err(e) => {
+                        error!("Flashing hardware fallito: {}", e);
+                        let _ = journal.step_to_failed(e.clone(), Some(&base_dir));
+                        let _ = cmd_tx.send(CoordinatorCommand::FlashFailed(e));
+                    }
+                }
+
+                crate::tray::notify_repaint();
+            })
+            .map_err(|e| format!("Impossibile avviare il thread di flash: {e}"))?;
+
+        Ok(())
     }
 }

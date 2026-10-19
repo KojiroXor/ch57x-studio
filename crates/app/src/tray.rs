@@ -45,6 +45,26 @@ impl TrayHandle {
             _thread,
         }
     }
+
+    /// Collega il contesto egui per svegliare l'event loop di eframe all'arrivo di comandi tray
+    pub fn set_repaint_ctx(&self, ctx: egui::Context) {
+        #[cfg(target_os = "windows")]
+        windows_tray::set_repaint_context(ctx);
+        #[cfg(not(target_os = "windows"))]
+        let _ = ctx;
+    }
+}
+
+impl Drop for TrayHandle {
+    fn drop(&mut self) {
+        #[cfg(target_os = "windows")]
+        windows_tray::cleanup();
+    }
+}
+
+pub fn notify_repaint() {
+    #[cfg(target_os = "windows")]
+    windows_tray::notify_repaint();
 }
 
 impl Default for TrayHandle {
@@ -70,17 +90,45 @@ mod windows_tray {
         WM_RBUTTONUP, WNDCLASSW, WS_OVERLAPPEDWINDOW,
     };
 
+    use std::sync::OnceLock;
+
     const WM_TRAY_CALLBACK: u32 = WM_APP + 101;
     const ID_TRAY_OPEN: usize = 1001;
     const ID_TRAY_PAUSE: usize = 1002;
     const ID_TRAY_HUD: usize = 1003;
     const ID_TRAY_EXIT: usize = 1004;
 
-    static mut GLOBAL_TRAY_SENDER: Option<Sender<TrayAction>> = None;
+    static GLOBAL_TRAY_SENDER: OnceLock<Sender<TrayAction>> = OnceLock::new();
+    static REPAINT_CTX: OnceLock<egui::Context> = OnceLock::new();
+    static TRAY_HWND: OnceLock<isize> = OnceLock::new();
+
+    pub fn set_repaint_context(ctx: egui::Context) {
+        let _ = REPAINT_CTX.set(ctx);
+    }
+
+    pub fn notify_repaint() {
+        if let Some(ctx) = REPAINT_CTX.get() {
+            ctx.request_repaint();
+        }
+    }
+
+    pub fn cleanup() {
+        if let Some(&raw_hwnd) = TRAY_HWND.get() {
+            let hwnd = HWND(raw_hwnd as *mut _);
+            unsafe {
+                let _ = windows::Win32::UI::WindowsAndMessaging::PostMessageW(
+                    Some(hwnd),
+                    windows::Win32::UI::WindowsAndMessaging::WM_CLOSE,
+                    WPARAM(0),
+                    LPARAM(0),
+                );
+            }
+        }
+    }
 
     pub fn run_tray_loop(sender: Sender<TrayAction>) {
         unsafe {
-            GLOBAL_TRAY_SENDER = Some(sender);
+            let _ = GLOBAL_TRAY_SENDER.set(sender);
 
             let class_name = w!("VortexDeckTrayClass");
             let icon = LoadIconW(None, IDI_APPLICATION).unwrap_or_default();
@@ -107,7 +155,10 @@ mod windows_tray {
                 None,
                 None,
             ) {
-                Ok(h) => h,
+                Ok(h) => {
+                    let _ = TRAY_HWND.set(h.0 as isize);
+                    h
+                }
                 Err(_) => return,
             };
 
@@ -174,32 +225,41 @@ mod windows_tray {
                         let _ = DestroyMenu(hmenu);
                     }
                 } else if event == WM_LBUTTONUP || event == WM_LBUTTONDBLCLK {
-                    if let Some(ref sender) = GLOBAL_TRAY_SENDER {
+                    if let Some(sender) = GLOBAL_TRAY_SENDER.get() {
                         let _ = sender.send(TrayAction::ShowWindow);
+                        notify_repaint();
                     }
                 }
                 LRESULT(0)
             }
             windows::Win32::UI::WindowsAndMessaging::WM_COMMAND => {
                 let cmd_id = wparam.0 & 0xffff;
-                if let Some(ref sender) = GLOBAL_TRAY_SENDER {
+                if let Some(sender) = GLOBAL_TRAY_SENDER.get() {
                     match cmd_id {
                         ID_TRAY_OPEN => {
                             let _ = sender.send(TrayAction::ShowWindow);
+                            notify_repaint();
                         }
                         ID_TRAY_PAUSE => {
                             let _ = sender.send(TrayAction::TogglePause);
+                            notify_repaint();
                         }
                         ID_TRAY_HUD => {
                             let _ = sender.send(TrayAction::ShowHud);
+                            notify_repaint();
                         }
                         ID_TRAY_EXIT => {
                             let _ = sender.send(TrayAction::Quit);
+                            notify_repaint();
                             PostQuitMessage(0);
                         }
                         _ => {}
                     }
                 }
+                LRESULT(0)
+            }
+            windows::Win32::UI::WindowsAndMessaging::WM_CLOSE => {
+                let _ = windows::Win32::UI::WindowsAndMessaging::DestroyWindow(hwnd);
                 LRESULT(0)
             }
             WM_DESTROY => {

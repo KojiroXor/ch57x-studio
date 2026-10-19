@@ -1,21 +1,28 @@
 //! VortexDeck (CH57x Studio) — Main Executable Entrypoint
 //!
 //! Supporta:
-//! - Modalità Grafica Desktop Completa (default) con `eframe`/`egui`
+//! - Modalità Grafica Desktop Completa (default) con `eframe`/`egui` in stile Apple Cupertino Pro Dark
 //! - Modalità Demone Background (`--background`): zero overhead GUI, solo Hotkeys e Dispatcher
 //! - Modalità Diagnostica Terminale (`--doctor`): probe USB, CLI e driver UsbDk da terminale
 //! - Modalità Provvisoria (`--safe-mode`): avvio senza registrazione scorciatoie globali
-//! - Protezione Singola Istanza (`CreateMutexW` su Windows)
+//! - Protezione Singola Istanza (`CreateMutexW` con sessione locale su Windows)
 
 mod coordinator;
 mod tray;
 
 use std::env;
+use std::time::{Duration, Instant};
 use tracing::info;
-use ch57x_platform::traits::PlatformBackend;
 
-use coordinator::{AppCoordinator, CoordinatorCommand};
+use ch57x_domain::hardware::LayerIndex;
+use ch57x_hardware::usb_probe::UsbStatus;
+use ch57x_platform::PlatformBackend;
+use ch57x_ui::state::{ActiveView, StatusLevel};
+use ch57x_ui::theme::*;
+
+use coordinator::{AppCoordinator, CoordinatorCommand, HardwareFlashPreview};
 use tray::{TrayAction, TrayHandle};
+use egui::{vec2, Color32, FontId, Margin, Pos2, Rounding, Stroke, TopBottomPanel};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -44,30 +51,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let is_background = args.contains(&"--background".to_string());
     let is_safe_mode = args.contains(&"--safe-mode".to_string());
 
-    // 2. Controllo Singola Istanza su Windows
+    // 2. Controllo Singola Istanza su Windows (Bug 9)
     #[cfg(target_os = "windows")]
-    {
+    let _mutex_guard = {
         use windows::core::w;
         use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
         use windows::Win32::System::Threading::CreateMutexW;
 
-        unsafe {
-            let _mutex = CreateMutexW(None, true, w!("Global\\VortexDeck_SingleInstance_Mutex"));
-            if GetLastError() == ERROR_ALREADY_EXISTS {
-                eprintln!("Un'altra istanza di VortexDeck è già in esecuzione.");
-                println!("Suggerimento: Controlla la System Tray (icona vicino all'orologio di Windows).");
-                return Ok(());
-            }
+        let handle = unsafe { CreateMutexW(None, true, w!("Local\\VortexDeck_SingleInstance_Mutex")) };
+        if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
+            eprintln!("Un'altra istanza di VortexDeck è già in esecuzione.");
+            println!("Suggerimento: Controlla la System Tray (icona vicino all'orologio di Windows).");
+            return Ok(());
         }
-    }
+        handle
+    };
 
-    info!("Avvio VortexDeck v{} (safe_mode: {}, background: {})", VERSION, is_safe_mode, is_background);
+    info!(
+        "Avvio VortexDeck v{} (safe_mode: {}, background: {})",
+        VERSION, is_safe_mode, is_background
+    );
 
     // Inizializza Coordinatore centrale
     let mut coordinator = AppCoordinator::new(is_safe_mode)?;
     let tray = TrayHandle::new();
 
-    // 3. Modalità Background (Zero GUI)
+    // 3. Modalità Background (Headless)
     if is_background {
         info!("Modalità --background attiva: avvio demone runtime headless.");
         println!("VortexDeck attivo in background. Premi Ctrl+C o usa la System Tray per uscire.");
@@ -77,7 +86,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             while let Ok(action) = tray.receiver.try_recv() {
                 match action {
                     TrayAction::ShowWindow => {
-                        println!("Richiesta apertura finestra non supportata in modalità headless.");
+                        info!("Apertura interfaccia grafica richiesta da System Tray mentre in background (Bug 11).");
+                        #[cfg(target_os = "windows")]
+                        {
+                            if let Ok(handle) = _mutex_guard {
+                                unsafe { let _ = windows::Win32::Foundation::CloseHandle(handle); };
+                            }
+                        }
+                        let exe = std::env::current_exe()?;
+                        let _ = std::process::Command::new(exe).spawn();
+                        return Ok(());
                     }
                     TrayAction::TogglePause => {
                         coordinator.command_sender.send(CoordinatorCommand::TogglePause)?;
@@ -97,23 +115,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // 4. Modalità Grafica Completa (eframe / egui)
+    // 4. Modalità Grafica Completa (eframe / egui Cupertino Pro Dark)
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("VortexDeck — CH57x Studio")
+            .with_title("VortexDeck")
             .with_inner_size([1240.0, 780.0])
-            .with_min_inner_size([960.0, 600.0]),
+            .with_min_inner_size([1000.0, 620.0])
+            .with_active(true),
         ..Default::default()
     };
 
     eframe::run_native(
         "VortexDeck",
         native_options,
-        Box::new(|_cc| {
+        Box::new(|cc| {
+            tray.set_repaint_ctx(cc.egui_ctx.clone());
+            apply_cupertino_theme(&cc.egui_ctx);
             Ok(Box::new(VortexDeckApp {
                 coordinator,
                 studio_ui: ch57x_ui::StudioUi::new(),
                 tray,
+                is_quitting: false,
+                flash_modal_preview: None,
+                hud_dismiss_at: None,
             }))
         }),
     )?;
@@ -125,112 +149,400 @@ struct VortexDeckApp {
     coordinator: AppCoordinator,
     studio_ui: ch57x_ui::StudioUi,
     tray: TrayHandle,
+    is_quitting: bool,
+    flash_modal_preview: Option<HardwareFlashPreview>,
+    hud_dismiss_at: Option<Instant>,
 }
 
 impl eframe::App for VortexDeckApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Processa comandi interni e messaggi dal tray
+        // Applica costantemente il tema Cupertino Dark
+        apply_cupertino_theme(ctx);
+
+        // Intercetta la chiusura della finestra con la 'X' per nascondere in Tray (Bug 6)
+        if ctx.input(|i| i.viewport().close_requested()) && !self.is_quitting {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+        }
+
+        // Processa azioni dalla System Tray
         while let Ok(action) = self.tray.receiver.try_recv() {
             match action {
                 TrayAction::ShowWindow => {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                     ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
                 }
                 TrayAction::TogglePause => {
                     let _ = self.coordinator.command_sender.send(CoordinatorCommand::TogglePause);
                 }
                 TrayAction::ShowHud => {
-                    self.coordinator.ui_state.active_view = ch57x_ui::state::ActiveView::Hud;
+                    self.hud_dismiss_at = Some(Instant::now() + Duration::from_millis(1500));
+                    ctx.request_repaint();
                 }
                 TrayAction::Quit => {
+                    self.is_quitting = true;
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
             }
         }
 
+        // Processa comandi del coordinatore
         self.coordinator.process_pending_commands();
 
-        // Barra degli strumenti superiore
-        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new("⚡ VORTEXDECK")
-                        .font(egui::FontId::proportional(16.0))
-                        .strong()
-                        .color(egui::Color32::from_rgb(56, 189, 248)),
-                );
+        // ---------------------------------------------------------------------
+        // BARRA SUPERIORE UNIFICATA STILE macOS TOOLBAR (54px) — (Bug 3 e Parte B)
+        // ---------------------------------------------------------------------
+        TopBottomPanel::top("macos_toolbar")
+            .exact_height(54.0)
+            .frame(egui::Frame {
+                inner_margin: Margin::symmetric(16.0, 10.0),
+                fill: COLOR_TOOLBAR_BG,
+                stroke: Stroke::new(1.0_f32, COLOR_BORDER_SUBTLE),
+                ..Default::default()
+            })
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    // --- SINISTRA: Titolo Elegante + Badge Hardware USB + Dirty Dot ---
+                    ui.label(
+                        egui::RichText::new("VortexDeck")
+                            .font(FontId::proportional(15.0))
+                            .strong()
+                            .color(COLOR_TEXT_PRIMARY),
+                    );
 
-                ui.separator();
+                    ui.add_space(8.0);
 
-                // Pulsante Salva Profilo
-                if ui.button("💾 Salva").on_hover_text("Salva il profilo su disco e aggiorna il motore runtime host").clicked() {
-                    self.coordinator.save_active_profile();
-                }
-
-                // Pulsante Valida YAML
-                if ui.button("🔍 Valida").on_hover_text("Verifica la configurazione con ch57x-keyboard-tool").clicked() {
-                    self.coordinator.validate_configuration();
-                }
-
-                // Pulsante Flashing Hardware
-                let flash_btn = ui.button(
-                    egui::RichText::new("⚡ Flasha su Tastiera")
-                        .color(egui::Color32::from_rgb(34, 197, 94))
-                        .strong(),
-                ).on_hover_text("Scrive la mappatura dei tasti direttamente nella memoria flash del Macropad USB");
-
-                if flash_btn.clicked() {
-                    self.coordinator.upload_configuration_to_device();
-                }
-
-                ui.separator();
-
-                // Toggle Pausa Emergenza
-                let is_paused = self.coordinator.dispatcher.is_paused();
-                let pause_text = if is_paused { "▶️ Riprendi" } else { "⏸️ Pausa" };
-                let pause_color = if is_paused { egui::Color32::from_rgb(234, 179, 8) } else { egui::Color32::LIGHT_GRAY };
-
-                if ui.button(egui::RichText::new(pause_text).color(pause_color)).clicked() {
-                    let _ = self.coordinator.command_sender.send(CoordinatorCommand::TogglePause);
-                }
-
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let vid_pid = ch57x_hardware::usb_probe::probe_usb_status();
-                    match vid_pid {
-                        ch57x_hardware::usb_probe::UsbStatus::Ready { vid, pid } => {
-                            ui.label(
-                                egui::RichText::new(format!("🟢 USB Pronta ({:04X}:{:04X})", vid, pid))
-                                    .color(egui::Color32::from_rgb(34, 197, 94)),
-                            );
+                    // Badge Hardware USB (interrogato con cooldown di 2s dal coordinator - Bug 3)
+                    let usb_status = self.coordinator.get_usb_status();
+                    match usb_status {
+                        UsbStatus::Ready { vid, pid } => {
+                            let text = format!("● USB Pronta {:04X}:{:04X}", vid, pid);
+                            draw_pill_badge(ui, &text, Color32::from_rgb(20, 42, 28), COLOR_APPLE_GREEN);
                         }
-                        ch57x_hardware::usb_probe::UsbStatus::DetectedAccessDenied => {
-                            ui.label(
-                                egui::RichText::new("🟡 USB Rilevata (Accesso Negato)")
-                                    .color(egui::Color32::from_rgb(234, 179, 8)),
-                            );
+                        UsbStatus::DetectedAccessDenied => {
+                            draw_pill_badge(ui, "● USB Accesso Negato", Color32::from_rgb(45, 32, 16), COLOR_APPLE_ORANGE);
                         }
-                        ch57x_hardware::usb_probe::UsbStatus::Disconnected => {
-                            ui.label(
-                                egui::RichText::new("⚪ USB Non Connessa (Solo Host)")
-                                    .color(egui::Color32::from_rgb(161, 161, 170)),
-                            );
+                        UsbStatus::Disconnected => {
+                            draw_pill_badge(ui, "● Solo Runtime Host", Color32::from_rgb(34, 34, 38), COLOR_TEXT_SECONDARY);
                         }
                     }
+
+                    if self.coordinator.ui_state.is_dirty {
+                        ui.add_space(4.0);
+                        draw_pill_badge(ui, "● Modifiche non salvate", Color32::from_rgb(45, 32, 16), COLOR_APPLE_ORANGE);
+                    }
+
+                    // --- CENTRO: Segmented Controls Stile macOS ---
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.add_space(24.0);
+
+                        // 1. Selettore Layer [ Layer 1 | Layer 2 | Layer 3 ]
+                        let mut current_layer = self.coordinator.ui_state.editing_layer.0;
+                        let layer_opts = [(0u8, "Layer 1"), (1u8, "Layer 2"), (2u8, "Layer 3")];
+                        if segmented_control(ui, &mut current_layer, &layer_opts) {
+                            self.coordinator.ui_state.set_editing_layer(LayerIndex(current_layer));
+                        }
+
+                        ui.add_space(14.0);
+
+                        // 2. Selettore Vista [ Configuratore | Diagnostica | HUD Preview ]
+                        let mut current_view = self.coordinator.ui_state.active_view;
+                        let view_opts = [
+                            (ActiveView::Editor, "Configuratore"),
+                            (ActiveView::Doctor, "Diagnostica"),
+                            (ActiveView::Hud, "HUD Preview"),
+                        ];
+                        if segmented_control(ui, &mut current_view, &view_opts) {
+                            self.coordinator.ui_state.active_view = current_view;
+                        }
+                    });
+
+                    // --- DESTRA: Azioni minimali e Pulsante Call-To-Action Blu Apple ---
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        // CTA Blu Scrivi su Dispositivo (Bug 4)
+                        let flash_btn = egui::Button::new(
+                            egui::RichText::new("Scrivi su Dispositivo…")
+                                .font(FontId::proportional(12.5))
+                                .strong()
+                                .color(Color32::WHITE),
+                        )
+                        .fill(COLOR_APPLE_BLUE)
+                        .stroke(Stroke::NONE)
+                        .rounding(Rounding::same(8.0))
+                        .min_size(vec2(0.0, 30.0));
+
+                        let is_flashing = self.coordinator.is_flashing();
+                        if ui.add_enabled(!is_flashing, flash_btn)
+                            .on_hover_text("Genera anteprima diff e apre il modulo di conferma prima di scrivere nella flash USB.")
+                            .clicked()
+                        {
+                            match self.coordinator.generate_flash_preview() {
+                                Ok(preview) => {
+                                    self.flash_modal_preview = Some(preview);
+                                }
+                                Err(e) => {
+                                    self.coordinator.ui_state.set_status(e, StatusLevel::Error);
+                                }
+                            }
+                        }
+
+                        ui.add_space(6.0);
+
+                        // Pulsante Salva
+                        if ui.button(egui::RichText::new("Salva").color(COLOR_TEXT_PRIMARY))
+                            .on_hover_text("Salva il profilo su disco e sincronizza il motore host.")
+                            .clicked()
+                        {
+                            self.coordinator.save_active_profile();
+                        }
+
+                        // Pulsante Valida
+                        if ui.button(egui::RichText::new("Valida").color(COLOR_TEXT_PRIMARY))
+                            .on_hover_text("Verifica la configurazione con ch57x-keyboard-tool.")
+                            .clicked()
+                        {
+                            self.coordinator.validate_configuration();
+                        }
+
+                        // Pulsante Pausa / Riprendi
+                        let is_paused = self.coordinator.dispatcher.is_paused();
+                        let (pause_lbl, pause_col) = if is_paused {
+                            ("Riprendi", COLOR_APPLE_ORANGE)
+                        } else {
+                            ("Pausa", COLOR_TEXT_SECONDARY)
+                        };
+                        if ui.button(egui::RichText::new(pause_lbl).color(pause_col))
+                            .on_hover_text("Sospende o riattiva l'esecuzione di tutte le automazioni host.")
+                            .clicked()
+                        {
+                            let _ = self.coordinator.command_sender.send(CoordinatorCommand::TogglePause);
+                        }
+                    });
                 });
             });
-        });
 
-        // Contenuto principale con StudioUi
-        egui::CentralPanel::default().show(ctx, |ui| {
-            self.studio_ui.show(
-                ui,
-                &mut self.coordinator.ui_state,
-                Some(self.coordinator.platform.as_ref()),
-            );
-        });
+        // ---------------------------------------------------------------------
+        // BARRA INFERIORE DI STATO STILE macOS STATUSBAR (28px)
+        // ---------------------------------------------------------------------
+        TopBottomPanel::bottom("macos_statusbar")
+            .exact_height(28.0)
+            .frame(egui::Frame {
+                inner_margin: Margin::symmetric(16.0, 5.0),
+                fill: COLOR_TOOLBAR_BG,
+                stroke: Stroke::new(1.0_f32, COLOR_BORDER_SUBTLE),
+                ..Default::default()
+            })
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    // Alert attivo o Pronto
+                    if let Some(alert) = &self.coordinator.ui_state.status_message {
+                        let col = match alert.level {
+                            StatusLevel::Info => COLOR_APPLE_BLUE,
+                            StatusLevel::Success => COLOR_APPLE_GREEN,
+                            StatusLevel::Warning => COLOR_APPLE_ORANGE,
+                            StatusLevel::Error => COLOR_APPLE_RED,
+                        };
+                        draw_status_dot(ui, Pos2::new(ui.cursor().min.x + 4.0, ui.cursor().min.y + 9.0), col, &alert.text);
+                    } else {
+                        draw_status_dot(ui, Pos2::new(ui.cursor().min.x + 4.0, ui.cursor().min.y + 9.0), COLOR_TEXT_SECONDARY, "Pronto");
+                    }
+
+                    // Destra: Info Profilo, Trigger Allocati e Versione
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(
+                            egui::RichText::new(format!("v{}", VERSION))
+                                .font(FontId::proportional(11.0))
+                                .color(COLOR_TEXT_TERTIARY),
+                        );
+                        ui.separator();
+                        let trigger_count = self.coordinator.profile.trigger_allocation.len();
+                        ui.label(
+                            egui::RichText::new(format!("{} Trigger Attivi", trigger_count))
+                                .font(FontId::proportional(11.0))
+                                .color(COLOR_TEXT_SECONDARY),
+                        );
+                        ui.separator();
+                        ui.label(
+                            egui::RichText::new(&self.coordinator.profile.name)
+                                .font(FontId::proportional(11.0))
+                                .color(COLOR_TEXT_SECONDARY),
+                        );
+                    });
+                });
+            });
+
+        // ---------------------------------------------------------------------
+        // PANNELLO CENTRALE PRINCIPALE (StudioUi)
+        // ---------------------------------------------------------------------
+        egui::CentralPanel::default()
+            .frame(egui::Frame {
+                fill: COLOR_OBSIDIAN_BG,
+                inner_margin: Margin::same(16.0),
+                ..Default::default()
+            })
+            .show(ctx, |ui| {
+                self.studio_ui.show(
+                    ui,
+                    &mut self.coordinator.ui_state,
+                    Some(self.coordinator.platform.as_ref()),
+                );
+            });
+
+        // ---------------------------------------------------------------------
+        // MODALE DI CONFERMA SCRITTURA FLASH STILE macOS SHEET (Bug 4)
+        // ---------------------------------------------------------------------
+        if let Some(preview) = self.flash_modal_preview.clone() {
+            egui::Window::new("Conferma Scrittura Hardware")
+                .anchor(egui::Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                .collapsible(false)
+                .resizable(false)
+                .fixed_size(vec2(440.0, 260.0))
+                .frame(egui::Frame {
+                    inner_margin: Margin::same(20.0),
+                    rounding: RADIUS_CARD,
+                    fill: COLOR_SURFACE_CARD,
+                    stroke: Stroke::new(1.0_f32, COLOR_BORDER_STRONG),
+                    shadow: egui::epaint::Shadow {
+                        blur: 28.0,
+                        color: Color32::from_black_alpha(180),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
+                .show(ctx, |ui| {
+                    ui.vertical(|ui| {
+                        ui.label(
+                            egui::RichText::new("Applicazione Mappatura su Flash USB")
+                                .font(FontId::proportional(14.0))
+                                .strong()
+                                .color(COLOR_TEXT_PRIMARY),
+                        );
+                        ui.add_space(8.0);
+                        ui.label(
+                            egui::RichText::new(
+                                "Stai per inviare la configurazione fisica alla memoria flash permanente del Macropad.",
+                            )
+                            .font(FontId::proportional(12.0))
+                            .color(COLOR_TEXT_SECONDARY),
+                        );
+                        ui.add_space(10.0);
+
+                        inset_grouped_card(ui, Some("Dettagli Operazione"), |ui| {
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new("Slot Attivi Configurati:").color(COLOR_TEXT_SECONDARY));
+                                ui.label(egui::RichText::new(format!("{}", preview.modified_slots_count)).strong().color(COLOR_TEXT_PRIMARY));
+                            });
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new("Hash Configurazione YAML:").color(COLOR_TEXT_SECONDARY));
+                                let short_hash = if preview.current_hash.len() > 12 { &preview.current_hash[..12] } else { &preview.current_hash };
+                                ui.label(egui::RichText::new(short_hash).monospace().color(COLOR_APPLE_BLUE));
+                            });
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new("Scrittura Flash Necessaria:").color(COLOR_TEXT_SECONDARY));
+                                if preview.requires_hardware_flash {
+                                    draw_pill_badge(ui, "SI (Modifiche Hardware)", Color32::from_rgb(45, 32, 16), COLOR_APPLE_ORANGE);
+                                } else {
+                                    draw_pill_badge(ui, "NO (Già Sincronizzato)", Color32::from_rgb(20, 42, 28), COLOR_APPLE_GREEN);
+                                }
+                            });
+                        });
+
+                        ui.add_space(12.0);
+
+                        ui.horizontal(|ui| {
+                            draw_status_dot(ui, Pos2::new(ui.cursor().min.x + 4.0, ui.cursor().min.y + 8.0), COLOR_APPLE_ORANGE, "");
+                            ui.add_space(14.0);
+                            ui.label(
+                                egui::RichText::new("Non scollegare il cavo USB durante il processo.")
+                                    .font(FontId::proportional(11.0))
+                                    .color(COLOR_APPLE_ORANGE),
+                            );
+                        });
+
+                        ui.add_space(14.0);
+
+                        ui.horizontal(|ui| {
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                let confirm_btn = egui::Button::new(
+                                    egui::RichText::new("Scrivi su Dispositivo")
+                                        .font(FontId::proportional(12.5))
+                                        .strong()
+                                        .color(Color32::WHITE),
+                                )
+                                .fill(COLOR_APPLE_BLUE)
+                                .rounding(Rounding::same(8.0))
+                                .min_size(vec2(140.0, 32.0));
+
+                                if ui.add(confirm_btn).clicked() {
+                                    if let Err(e) = self.coordinator.start_hardware_flash(preview.yaml_str.clone(), preview.current_hash.clone()) {
+                                        self.coordinator.ui_state.set_status(e, StatusLevel::Error);
+                                    }
+                                    self.flash_modal_preview = None;
+                                }
+
+                                ui.add_space(8.0);
+
+                                let cancel_btn = egui::Button::new(
+                                    egui::RichText::new("Annulla").color(COLOR_TEXT_PRIMARY),
+                                )
+                                .min_size(vec2(80.0, 32.0));
+
+                                if ui.add(cancel_btn).clicked() {
+                                    self.flash_modal_preview = None;
+                                }
+                            });
+                        });
+                    });
+                });
+        }
+
+        // Indicatore non bloccante durante il flashing hardware
+        if self.coordinator.is_flashing() {
+            egui::Window::new("Scrittura Hardware")
+                .anchor(egui::Align2::CENTER_CENTER, vec2(0.0, 0.0))
+                .collapsible(false)
+                .resizable(false)
+                .title_bar(false)
+                .fixed_size(vec2(320.0, 90.0))
+                .frame(egui::Frame {
+                    inner_margin: Margin::same(20.0),
+                    rounding: RADIUS_CARD,
+                    fill: COLOR_SURFACE_CARD,
+                    stroke: Stroke::new(1.0_f32, COLOR_APPLE_BLUE),
+                    ..Default::default()
+                })
+                .show(ctx, |ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.add(egui::Spinner::new().size(24.0));
+                        ui.add_space(8.0);
+                        ui.label(
+                            egui::RichText::new("Scrittura memoria flash USB in corso...")
+                                .font(FontId::proportional(12.5))
+                                .color(COLOR_TEXT_PRIMARY)
+                                .strong(),
+                        );
+                    });
+                });
+            ctx.request_repaint_after(Duration::from_millis(50));
+        }
+
+        // ---------------------------------------------------------------------
+        // HUD OSD FLOTTANTE CON DISMISS AUTOMATICO 1.5s (Bug 12)
+        // ---------------------------------------------------------------------
+        if let Some(dismiss_time) = self.hud_dismiss_at {
+            if Instant::now() < dismiss_time {
+                self.studio_ui.hud.is_visible = true;
+                self.studio_ui.hud.show(ctx, &mut self.coordinator.ui_state);
+                ctx.request_repaint_after(Duration::from_millis(30));
+            } else {
+                self.studio_ui.hud.is_visible = false;
+                self.hud_dismiss_at = None;
+            }
+        }
 
         // Richiedi repaint se c'è un countdown di cattura finestra attivo
         if self.coordinator.ui_state.window_capture.is_some() {
-            ctx.request_repaint_after(std::time::Duration::from_millis(50));
+            ctx.request_repaint_after(Duration::from_millis(50));
         }
     }
 }
