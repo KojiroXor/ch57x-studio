@@ -122,7 +122,13 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path "dist/VortexDeck/bin"
           Copy-Item -Force "target/release/vortexdeck.exe" "dist/VortexDeck/vortexdeck.exe"
-          if (Test-Path "bin/ch57x-keyboard-tool.exe") {
+          if (-not (Test-Path "bin/ch57x-keyboard-tool.exe")) {
+            Write-Host "Downloading upstream ch57x-keyboard-tool for release packaging..."
+            Invoke-WebRequest -Uri "https://github.com/kriomant/ch57x-keyboard-tool/releases/download/v1.0.0/ch57x-keyboard-tool-x86_64-pc-windows-msvc.zip" -OutFile "ch57x_upstream.zip"
+            Expand-Archive -Path "ch57x_upstream.zip" -DestinationPath "bin_temp" -Force
+            Copy-Item -Force "bin_temp/ch57x-keyboard-tool.exe" "dist/VortexDeck/bin/ch57x-keyboard-tool.exe"
+            Remove-Item -Recurse -Force "bin_temp", "ch57x_upstream.zip"
+          } else {
             Copy-Item -Force "bin/ch57x-keyboard-tool.exe" "dist/VortexDeck/bin/ch57x-keyboard-tool.exe"
           }
           if (Test-Path "bin/example-mapping.yaml") {

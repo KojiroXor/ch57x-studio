@@ -1,8 +1,69 @@
+# ==============================================================================
+# VortexDeck (CH57x Studio) — Git Ignore Rules
+# ==============================================================================
+
+# --- Rust & Cargo Build Artifacts ---
 /target/
+Cargo.lock.backup
 **/*.rs.bk
 *.pdb
+*.rlib
+*.rmeta
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+*.lib
+
+# --- Upstream & Local Precompiled Binaries ---
+bin/*.exe
 bin/*.zip
+bin/*.tar.gz
+bin/*.7z
+
+# --- Distribution & Release Bundles ---
+/dist/
+*.msi
+*.appx
+*.exe.manifest
+
+# --- Temporary Audit & Scratch Files ---
+AUDIT.md
+AUDIT_SOURCE.md
+scratch/
+tmp/
+*.tmp
+*.bak
+*.orig
+*.swp
+*~
+
+# --- Logs & Profiling ---
+*.log
+*.dmp
+*.stackdump
+*.profraw
+*.profdata
+coverage/
+
+# --- IDE & Editor Artifacts ---
 .idea/
 .vscode/
-*.log
-/dist/
+*.iml
+*.sublime-project
+*.sublime-workspace
+.project
+.settings/
+
+# --- Operating System Junk ---
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Thumbs.db:encryptable
+desktop.ini
+$RECYCLE.BIN/
