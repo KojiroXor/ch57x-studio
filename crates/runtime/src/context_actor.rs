@@ -53,7 +53,10 @@ impl ContextActor {
         // Exe name matching
         if let Some(ref expected_exe) = rule.match_exe_name {
             let exp_clean = expected_exe.strip_suffix(".exe").unwrap_or(expected_exe);
-            let actual_clean = fg_info.exe_name.strip_suffix(".exe").unwrap_or(&fg_info.exe_name);
+            let actual_clean = fg_info
+                .exe_name
+                .strip_suffix(".exe")
+                .unwrap_or(&fg_info.exe_name);
             if !exp_clean.eq_ignore_ascii_case(actual_clean) {
                 return false;
             }
@@ -156,7 +159,10 @@ mod tests {
         };
 
         // Test 1: Chrome with YouTube in title -> matches Rule 1
-        let fg_yt = make_fg("chrome.exe", "Rick Astley - Never Gonna Give You Up - YouTube");
+        let fg_yt = make_fg(
+            "chrome.exe",
+            "Rick Astley - Never Gonna Give You Up - YouTube",
+        );
         let res_yt = ContextActor::evaluate_against_foreground(&dispatch_action, &fg_yt);
         assert_eq!(res_yt, action_id_browser_yt);
 
@@ -189,7 +195,9 @@ mod tests {
             fallback_action_id: fallback_id,
         };
 
-        let result = actor.evaluate(&dispatch, 0).expect("Should fallback gracefully");
+        let result = actor
+            .evaluate(&dispatch, 0)
+            .expect("Should fallback gracefully");
         assert_eq!(result, fallback_id);
     }
 }

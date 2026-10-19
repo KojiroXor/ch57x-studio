@@ -4,7 +4,9 @@ use crate::context_actor::ContextActor;
 use crate::macro_actor::{MacroActor, MacroRunOutcome};
 use crate::window_actor::WindowActor;
 use crate::workspace_actor::{WorkspaceActor, WorkspaceRestoreReport};
-use ch57x_domain::actions::{ActionDefinition, ActionId, HidAction, SlotBinding, WindowActionResult};
+use ch57x_domain::actions::{
+    ActionDefinition, ActionId, HidAction, SlotBinding, WindowActionResult,
+};
 use ch57x_domain::profile::Profile;
 use ch57x_domain::triggers::PhantomTrigger;
 use ch57x_platform::traits::{InputInjectorBackend, WindowManagerBackend};
@@ -185,12 +187,10 @@ impl RuntimeDispatcher {
         };
 
         match action_def {
-            ActionDefinition::LaunchOrFocus(action) => {
-                match self.window_actor.execute(action) {
-                    Ok(res) => DispatchOutcome::Window(res),
-                    Err(err) => DispatchOutcome::Error(err.to_string()),
-                }
-            }
+            ActionDefinition::LaunchOrFocus(action) => match self.window_actor.execute(action) {
+                Ok(res) => DispatchOutcome::Window(res),
+                Err(err) => DispatchOutcome::Error(err.to_string()),
+            },
             ActionDefinition::RestoreWorkspace(action) => {
                 match self.workspace_actor.execute(action) {
                     Ok(report) => DispatchOutcome::Workspace(report),
@@ -209,7 +209,7 @@ impl RuntimeDispatcher {
                 }
 
                 #[cfg(target_os = "windows")]
-                if action.hide_console_window {
+                {
                     use std::os::windows::process::CommandExt;
                     cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
                 }
@@ -232,11 +232,9 @@ impl RuntimeDispatcher {
                     Err(err) => DispatchOutcome::Error(err.to_string()),
                 }
             }
-            ActionDefinition::ShowHud { duration_ms } => {
-                DispatchOutcome::ShowHud {
-                    duration_ms: *duration_ms,
-                }
-            }
+            ActionDefinition::ShowHud { duration_ms } => DispatchOutcome::ShowHud {
+                duration_ms: *duration_ms,
+            },
         }
     }
 }
@@ -355,12 +353,9 @@ mod tests {
         );
 
         // 3. HUD action
-        profile.actions.insert(
-            action_hud,
-            ActionDefinition::ShowHud {
-                duration_ms: 1500,
-            },
-        );
+        profile
+            .actions
+            .insert(action_hud, ActionDefinition::ShowHud { duration_ms: 1500 });
 
         // 4. Context action referencing HUD
         profile.actions.insert(

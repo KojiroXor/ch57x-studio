@@ -71,7 +71,10 @@ pub fn save_profile_to_path(profile: &Profile, target_path: &Path) -> Result<(),
 }
 
 /// Validates and atomically saves a `Profile` in the standard profiles folder (`<id>.json`).
-pub fn save_profile(profile: &Profile, custom_dir: Option<&Path>) -> Result<PathBuf, PersistenceError> {
+pub fn save_profile(
+    profile: &Profile,
+    custom_dir: Option<&Path>,
+) -> Result<PathBuf, PersistenceError> {
     let profiles_dir = get_profiles_dir(custom_dir);
     let target_path = profiles_dir.join(format!("{}.json", profile.id));
     save_profile_to_path(profile, &target_path)?;
@@ -152,7 +155,8 @@ mod tests {
         assert_eq!(loaded_from_path.name, profile.name);
 
         // Load profile by ID
-        let loaded_by_id = load_profile(&profile_id, Some(&temp_dir)).expect("Failed to load by id");
+        let loaded_by_id =
+            load_profile(&profile_id, Some(&temp_dir)).expect("Failed to load by id");
         assert_eq!(loaded_by_id.id, profile_id);
 
         // List profiles
@@ -171,8 +175,10 @@ mod tests {
     #[test]
     fn test_atomic_overwrite_preserves_integrity() {
         let temp_dir = std::env::temp_dir().join(format!("ch57x_test_ow_{}", Uuid::new_v4()));
-        let mut profile = Profile::default();
-        profile.name = "Version 1".into();
+        let mut profile = Profile {
+            name: "Version 1".into(),
+            ..Default::default()
+        };
 
         let path = save_profile(&profile, Some(&temp_dir)).expect("Failed to save V1");
         let v1 = load_profile_from_path(&path).expect("Failed to load V1");

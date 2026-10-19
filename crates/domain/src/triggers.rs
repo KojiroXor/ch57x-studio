@@ -85,15 +85,25 @@ mod tests {
     #[test]
     fn test_exactly_60_candidate_triggers() {
         let triggers = PhantomTrigger::all_candidates();
-        assert_eq!(triggers.len(), 60, "Must have exactly 60 candidate triggers");
+        assert_eq!(
+            triggers.len(),
+            60,
+            "Must have exactly 60 candidate triggers"
+        );
 
         let mut unique_yaml = HashSet::new();
         let mut unique_indices = HashSet::new();
 
         for (idx, trigger) in triggers.iter().enumerate() {
             assert_eq!(trigger.pool_index(), idx);
-            assert!(unique_yaml.insert(trigger.yaml_token()), "YAML tokens must be unique");
-            assert!(unique_indices.insert(trigger.pool_index()), "Pool indices must be unique");
+            assert!(
+                unique_yaml.insert(trigger.yaml_token()),
+                "YAML tokens must be unique"
+            );
+            assert!(
+                unique_indices.insert(trigger.pool_index()),
+                "Pool indices must be unique"
+            );
         }
 
         assert_eq!(unique_yaml.len(), 60);
@@ -103,23 +113,53 @@ mod tests {
     #[test]
     fn test_trigger_banks() {
         // Bank A: f13..f24
-        assert_eq!(PhantomTrigger::from_pool_index(0).unwrap().yaml_token(), "f13");
-        assert_eq!(PhantomTrigger::from_pool_index(11).unwrap().yaml_token(), "f24");
+        assert_eq!(
+            PhantomTrigger::from_pool_index(0).unwrap().yaml_token(),
+            "f13"
+        );
+        assert_eq!(
+            PhantomTrigger::from_pool_index(11).unwrap().yaml_token(),
+            "f24"
+        );
 
         // Bank B: ctrl-f13..ctrl-f24
-        assert_eq!(PhantomTrigger::from_pool_index(12).unwrap().yaml_token(), "ctrl-f13");
-        assert_eq!(PhantomTrigger::from_pool_index(23).unwrap().yaml_token(), "ctrl-f24");
+        assert_eq!(
+            PhantomTrigger::from_pool_index(12).unwrap().yaml_token(),
+            "ctrl-f13"
+        );
+        assert_eq!(
+            PhantomTrigger::from_pool_index(23).unwrap().yaml_token(),
+            "ctrl-f24"
+        );
 
         // Bank C: shift-f13..shift-f24
-        assert_eq!(PhantomTrigger::from_pool_index(24).unwrap().yaml_token(), "shift-f13");
-        assert_eq!(PhantomTrigger::from_pool_index(35).unwrap().yaml_token(), "shift-f24");
+        assert_eq!(
+            PhantomTrigger::from_pool_index(24).unwrap().yaml_token(),
+            "shift-f13"
+        );
+        assert_eq!(
+            PhantomTrigger::from_pool_index(35).unwrap().yaml_token(),
+            "shift-f24"
+        );
 
         // Bank D: alt-f13..alt-f24
-        assert_eq!(PhantomTrigger::from_pool_index(36).unwrap().yaml_token(), "alt-f13");
-        assert_eq!(PhantomTrigger::from_pool_index(47).unwrap().yaml_token(), "alt-f24");
+        assert_eq!(
+            PhantomTrigger::from_pool_index(36).unwrap().yaml_token(),
+            "alt-f13"
+        );
+        assert_eq!(
+            PhantomTrigger::from_pool_index(47).unwrap().yaml_token(),
+            "alt-f24"
+        );
 
         // Bank E: ctrl-shift-f13..ctrl-shift-f24
-        assert_eq!(PhantomTrigger::from_pool_index(48).unwrap().yaml_token(), "ctrl-shift-f13");
-        assert_eq!(PhantomTrigger::from_pool_index(59).unwrap().yaml_token(), "ctrl-shift-f24");
+        assert_eq!(
+            PhantomTrigger::from_pool_index(48).unwrap().yaml_token(),
+            "ctrl-shift-f13"
+        );
+        assert_eq!(
+            PhantomTrigger::from_pool_index(59).unwrap().yaml_token(),
+            "ctrl-shift-f24"
+        );
     }
 }

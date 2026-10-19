@@ -155,7 +155,10 @@ fn validate_actions(profile: &Profile) -> Result<(), DomainError> {
                                 )));
                             }
                         }
-                        MacroStep::WaitForWindow { selector, timeout_ms } => {
+                        MacroStep::WaitForWindow {
+                            selector,
+                            timeout_ms,
+                        } => {
                             let has_sel = selector.exe_name.is_some()
                                 || selector.title_contains.is_some()
                                 || selector.class_name.is_some();
@@ -211,7 +214,8 @@ fn validate_actions(profile: &Profile) -> Result<(), DomainError> {
                             action_id, rule_idx
                         )));
                     }
-                    let has_match = rule.match_exe_name.is_some() || rule.match_title_contains.is_some();
+                    let has_match =
+                        rule.match_exe_name.is_some() || rule.match_title_contains.is_some();
                     if !has_match {
                         return Err(DomainError::Validation(format!(
                             "ContextDispatch action {} rule {} has no match condition",
@@ -234,7 +238,10 @@ fn validate_actions(profile: &Profile) -> Result<(), DomainError> {
     Ok(())
 }
 
-fn validate_coordinates(action_id: &ActionId, coords: &WindowCoordinates) -> Result<(), DomainError> {
+fn validate_coordinates(
+    action_id: &ActionId,
+    coords: &WindowCoordinates,
+) -> Result<(), DomainError> {
     match coords {
         WindowCoordinates::Absolute { width, height, .. } => {
             if *width <= 0 || *height <= 0 {
@@ -301,7 +308,11 @@ mod tests {
     fn test_default_profile_is_valid() {
         let profile = Profile::default();
         let result = validate_profile(&profile);
-        assert!(result.is_ok(), "Default profile must be valid: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "Default profile must be valid: {:?}",
+            result
+        );
     }
 
     #[test]
@@ -340,7 +351,9 @@ mod tests {
         let result = validate_profile(&profile);
         assert!(result.is_err());
         match result.unwrap_err() {
-            DomainError::Validation(msg) => assert!(msg.contains("references nonexistent ActionId")),
+            DomainError::Validation(msg) => {
+                assert!(msg.contains("references nonexistent ActionId"))
+            }
             other => panic!("Expected DomainError::Validation, got {:?}", other),
         }
     }
@@ -350,10 +363,9 @@ mod tests {
         let mut profile = Profile::default();
 
         let fallback_id = ActionId::new_v4();
-        profile.actions.insert(
-            fallback_id,
-            ActionDefinition::ShowHud { duration_ms: 1000 },
-        );
+        profile
+            .actions
+            .insert(fallback_id, ActionDefinition::ShowHud { duration_ms: 1000 });
 
         let target_id = ActionId::new_v4();
         profile.actions.insert(
@@ -388,17 +400,23 @@ mod tests {
 
         // Missing fallback fails
         let bad_fallback_id = ActionId::new_v4();
-        if let Some(ActionDefinition::ContextDispatch(ref mut d)) = profile.actions.get_mut(&dispatch_id) {
+        if let Some(ActionDefinition::ContextDispatch(ref mut d)) =
+            profile.actions.get_mut(&dispatch_id)
+        {
             d.fallback_action_id = bad_fallback_id;
         }
         let err = validate_profile(&profile).unwrap_err();
         match err {
-            DomainError::Validation(msg) => assert!(msg.contains("references nonexistent fallback action")),
+            DomainError::Validation(msg) => {
+                assert!(msg.contains("references nonexistent fallback action"))
+            }
             other => panic!("Expected DomainError::Validation, got {:?}", other),
         }
 
         // Self-referencing fallback fails
-        if let Some(ActionDefinition::ContextDispatch(ref mut d)) = profile.actions.get_mut(&dispatch_id) {
+        if let Some(ActionDefinition::ContextDispatch(ref mut d)) =
+            profile.actions.get_mut(&dispatch_id)
+        {
             d.fallback_action_id = dispatch_id;
         }
         let err = validate_profile(&profile).unwrap_err();
@@ -453,7 +471,9 @@ mod tests {
         let result = validate_profile(&profile);
         assert!(result.is_err());
         match result.unwrap_err() {
-            DomainError::Validation(msg) => assert!(msg.contains("Window dimensions must be positive")),
+            DomainError::Validation(msg) => {
+                assert!(msg.contains("Window dimensions must be positive"))
+            }
             other => panic!("Expected DomainError::Validation, got {:?}", other),
         }
     }

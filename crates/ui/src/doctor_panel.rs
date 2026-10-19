@@ -10,9 +10,7 @@ use crate::theme::*;
 use ch57x_domain::hardware::EncoderEvent;
 use ch57x_hardware::usb_probe::UsbStatus;
 use ch57x_platform::PlatformBackend;
-use egui::{
-    vec2, Color32, FontId, ProgressBar, Rounding, Sense, Stroke, Ui,
-};
+use egui::{vec2, Color32, FontId, ProgressBar, Rounding, Sense, Stroke, Ui};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrafficLight {
@@ -218,10 +216,16 @@ impl DoctorPanel {
 
             ui.painter().circle_filled(center, 7.0, halo);
             ui.painter().circle_filled(center, 4.0, color);
-            ui.painter().circle_stroke(center, 4.0, Stroke::new(1.0_f32, Color32::WHITE));
+            ui.painter()
+                .circle_stroke(center, 4.0, Stroke::new(1.0_f32, Color32::WHITE));
 
             ui.vertical(|ui| {
-                ui.label(egui::RichText::new(title).font(FontId::proportional(12.5)).strong().color(COLOR_TEXT_PRIMARY));
+                ui.label(
+                    egui::RichText::new(title)
+                        .font(FontId::proportional(12.5))
+                        .strong()
+                        .color(COLOR_TEXT_PRIMARY),
+                );
                 ui.label(
                     egui::RichText::new(subtitle)
                         .font(FontId::proportional(11.0))
@@ -248,7 +252,13 @@ impl DoctorPanel {
         let pct = tested as f32 / total as f32;
 
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new(format!("Progresso: {} di {} controlli testati", tested, total)).color(COLOR_TEXT_PRIMARY));
+            ui.label(
+                egui::RichText::new(format!(
+                    "Progresso: {} di {} controlli testati",
+                    tested, total
+                ))
+                .color(COLOR_TEXT_PRIMARY),
+            );
             if state.calibration.is_complete() {
                 ui.label(
                     egui::RichText::new("Completato")
@@ -258,12 +268,21 @@ impl DoctorPanel {
             }
         });
         ui.add_space(3.0);
-        ui.add(ProgressBar::new(pct).desired_width(ui.available_width()).fill(COLOR_APPLE_GREEN));
+        ui.add(
+            ProgressBar::new(pct)
+                .desired_width(ui.available_width())
+                .fill(COLOR_APPLE_GREEN),
+        );
 
         ui.add_space(10.0);
 
         // 1. Griglia Tasti 4x3
-        ui.label(egui::RichText::new("Matrice Tasti (12 Pulsanti)").font(FontId::proportional(11.0)).strong().color(COLOR_TEXT_SECONDARY));
+        ui.label(
+            egui::RichText::new("Matrice Tasti (12 Pulsanti)")
+                .font(FontId::proportional(11.0))
+                .strong()
+                .color(COLOR_TEXT_SECONDARY),
+        );
         ui.add_space(4.0);
 
         for r in 0..3 {
@@ -279,13 +298,23 @@ impl DoctorPanel {
                         COLOR_TEXT_PRIMARY
                     };
 
-                    let btn = egui::Button::new(
-                        egui::RichText::new(btn_text).color(btn_col).strong(),
-                    )
-                    .fill(if is_tested { Color32::from_rgb(25, 45, 30) } else { COLOR_CONTROL_INACTIVE })
-                    .stroke(Stroke::new(1.0_f32, if is_tested { COLOR_APPLE_GREEN } else { COLOR_BORDER_SUBTLE }))
-                    .rounding(Rounding::same(6.0))
-                    .min_size(vec2(52.0, 30.0));
+                    let btn =
+                        egui::Button::new(egui::RichText::new(btn_text).color(btn_col).strong())
+                            .fill(if is_tested {
+                                Color32::from_rgb(25, 45, 30)
+                            } else {
+                                COLOR_CONTROL_INACTIVE
+                            })
+                            .stroke(Stroke::new(
+                                1.0_f32,
+                                if is_tested {
+                                    COLOR_APPLE_GREEN
+                                } else {
+                                    COLOR_BORDER_SUBTLE
+                                },
+                            ))
+                            .rounding(Rounding::same(6.0))
+                            .min_size(vec2(52.0, 30.0));
 
                     if ui.add(btn).clicked() {
                         state.calibration.press_button(idx);
@@ -297,11 +326,20 @@ impl DoctorPanel {
         ui.add_space(10.0);
 
         // 2. Test Encoders
-        ui.label(egui::RichText::new("Encoders Rotativi (Rotazione & Click)").font(FontId::proportional(11.0)).strong().color(COLOR_TEXT_SECONDARY));
+        ui.label(
+            egui::RichText::new("Encoders Rotativi (Rotazione & Click)")
+                .font(FontId::proportional(11.0))
+                .strong()
+                .color(COLOR_TEXT_SECONDARY),
+        );
         ui.add_space(4.0);
 
         for enc_idx in 0..2 {
-            let enc_name = if enc_idx == 0 { "Encoder 1 (Superiore)" } else { "Encoder 2 (Inferiore)" };
+            let enc_name = if enc_idx == 0 {
+                "Encoder 1 (Superiore)"
+            } else {
+                "Encoder 2 (Inferiore)"
+            };
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new(format!("{}:", enc_name)).color(COLOR_TEXT_SECONDARY));
 
@@ -320,8 +358,19 @@ impl DoctorPanel {
                     };
 
                     let btn = egui::Button::new(egui::RichText::new(label).color(col).strong())
-                        .fill(if is_tested { Color32::from_rgb(25, 45, 30) } else { COLOR_CONTROL_INACTIVE })
-                        .stroke(Stroke::new(1.0_f32, if is_tested { COLOR_APPLE_GREEN } else { COLOR_BORDER_SUBTLE }))
+                        .fill(if is_tested {
+                            Color32::from_rgb(25, 45, 30)
+                        } else {
+                            COLOR_CONTROL_INACTIVE
+                        })
+                        .stroke(Stroke::new(
+                            1.0_f32,
+                            if is_tested {
+                                COLOR_APPLE_GREEN
+                            } else {
+                                COLOR_BORDER_SUBTLE
+                            },
+                        ))
                         .rounding(Rounding::same(6.0));
 
                     if ui.add(btn).clicked() {
@@ -341,7 +390,10 @@ impl DoctorPanel {
                 "Standard (Knob 0 in alto)"
             };
 
-            ui.label(egui::RichText::new(format!("Ordine Fisico: {}", status_swap)).color(COLOR_TEXT_PRIMARY));
+            ui.label(
+                egui::RichText::new(format!("Ordine Fisico: {}", status_swap))
+                    .color(COLOR_TEXT_PRIMARY),
+            );
 
             if ui.button("Inverti Ordine Encoder (Swap)").clicked() {
                 state.calibration.toggle_swap();
@@ -350,7 +402,11 @@ impl DoctorPanel {
                 state.set_status(
                     format!(
                         "Ordine encoder aggiornato: {}",
-                        if state.calibration.swap_order { "Invertito" } else { "Standard" }
+                        if state.calibration.swap_order {
+                            "Invertito"
+                        } else {
+                            "Standard"
+                        }
                     ),
                     StatusLevel::Info,
                 );

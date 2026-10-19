@@ -135,7 +135,9 @@ impl ClipboardProvider for OsClipboard {
         use windows::Win32::System::DataExchange::{
             CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
         };
-        use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+        use windows::Win32::System::Memory::{
+            GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE,
+        };
 
         unsafe {
             if OpenClipboard(None).is_err() {
@@ -347,9 +349,14 @@ impl MacroActor {
         let clip = self.clipboard.clone();
 
         tokio::spawn(async move {
-            let res =
-                Self::execute_sequence(&action, input.as_ref(), wm.as_ref(), clip.as_ref(), &cancel_flag)
-                    .await;
+            let res = Self::execute_sequence(
+                &action,
+                input.as_ref(),
+                wm.as_ref(),
+                clip.as_ref(),
+                &cancel_flag,
+            )
+            .await;
 
             if let Err(err) = res {
                 tracing::warn!("Macro execution finished with error: {err}");
@@ -618,7 +625,10 @@ mod tests {
             }
         }
 
-        fn with_sequence(initial_fg: ForegroundAppInfo, subsequent: Vec<ForegroundAppInfo>) -> Self {
+        fn with_sequence(
+            initial_fg: ForegroundAppInfo,
+            subsequent: Vec<ForegroundAppInfo>,
+        ) -> Self {
             Self {
                 fg: Mutex::new(initial_fg),
                 fg_queue: Mutex::new(subsequent.into()),

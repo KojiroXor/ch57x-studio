@@ -9,12 +9,10 @@
 
 use crate::state::{hex_to_color32, UiState};
 use crate::theme::*;
-use ch57x_domain::hardware::{
-    ControlId, EncoderEvent, LayerIndex, SlotId, COL_COUNT, ROW_COUNT,
-};
+use ch57x_domain::hardware::{ControlId, EncoderEvent, LayerIndex, SlotId, COL_COUNT, ROW_COUNT};
 use egui::{
-    pos2, vec2, Align2, Color32, FontId, Painter, Pos2, Rect, Response, Rounding, Sense, Stroke, Ui,
-    Vec2,
+    pos2, vec2, Align2, Color32, FontId, Painter, Pos2, Rect, Response, Rounding, Sense, Stroke,
+    Ui, Vec2,
 };
 use std::f32::consts::PI;
 
@@ -75,9 +73,18 @@ impl PadCanvas {
         let screw_offset = 14.0;
         let screw_positions = [
             pos2(origin.x + screw_offset, origin.y + screw_offset),
-            pos2(origin.x + rect.width() - screw_offset, origin.y + screw_offset),
-            pos2(origin.x + screw_offset, origin.y + rect.height() - screw_offset),
-            pos2(origin.x + rect.width() - screw_offset, origin.y + rect.height() - screw_offset),
+            pos2(
+                origin.x + rect.width() - screw_offset,
+                origin.y + screw_offset,
+            ),
+            pos2(
+                origin.x + screw_offset,
+                origin.y + rect.height() - screw_offset,
+            ),
+            pos2(
+                origin.x + rect.width() - screw_offset,
+                origin.y + rect.height() - screw_offset,
+            ),
         ];
         for sp in screw_positions {
             Self::draw_satin_screw(&painter, sp);
@@ -119,7 +126,8 @@ impl PadCanvas {
                 let k_y = key_area_origin.y + (r as f32) * (key_size + key_gap);
                 let key_rect = Rect::from_min_size(pos2(k_x, k_y), vec2(key_size, key_size));
 
-                let key_id = ui.make_persistent_id(format!("key_{}_{}_{}", state.editing_layer.0, r, c));
+                let key_id =
+                    ui.make_persistent_id(format!("key_{}_{}_{}", state.editing_layer.0, r, c));
                 let key_resp = ui.interact(key_rect, key_id, Sense::click());
 
                 if key_resp.clicked() {
@@ -204,17 +212,35 @@ impl PadCanvas {
                 };
 
                 let rounding = if offset_idx == 0.0 {
-                    Rounding { nw: 6.0, ne: 0.0, sw: 6.0, se: 0.0 }
+                    Rounding {
+                        nw: 6.0,
+                        ne: 0.0,
+                        sw: 6.0,
+                        se: 0.0,
+                    }
                 } else if offset_idx == 2.0 {
-                    Rounding { nw: 0.0, ne: 6.0, sw: 0.0, se: 6.0 }
+                    Rounding {
+                        nw: 0.0,
+                        ne: 6.0,
+                        sw: 0.0,
+                        se: 6.0,
+                    }
                 } else {
                     Rounding::ZERO
                 };
 
                 painter.rect_filled(zone_rect, rounding, bg_color);
-                painter.rect_stroke(zone_rect, rounding, Stroke::new(1.0_f32, COLOR_BORDER_SUBTLE));
+                painter.rect_stroke(
+                    zone_rect,
+                    rounding,
+                    Stroke::new(1.0_f32, COLOR_BORDER_SUBTLE),
+                );
 
-                let text_color = if is_sel { Color32::WHITE } else { COLOR_TEXT_PRIMARY };
+                let text_color = if is_sel {
+                    Color32::WHITE
+                } else {
+                    COLOR_TEXT_PRIMARY
+                };
                 painter.text(
                     zone_rect.center(),
                     Align2::CENTER_CENTER,
@@ -231,14 +257,24 @@ impl PadCanvas {
     /// Disegna una vite angolare satinata in alluminio
     fn draw_satin_screw(painter: &Painter, center: Pos2) {
         painter.circle_filled(center, 4.0, SCREW_METAL);
-        painter.circle_stroke(center, 4.0, Stroke::new(0.8_f32, Color32::from_rgb(140, 140, 145)));
+        painter.circle_stroke(
+            center,
+            4.0,
+            Stroke::new(0.8_f32, Color32::from_rgb(140, 140, 145)),
+        );
         // Intaglio a croce
         painter.line_segment(
-            [pos2(center.x - 2.2, center.y), pos2(center.x + 2.2, center.y)],
+            [
+                pos2(center.x - 2.2, center.y),
+                pos2(center.x + 2.2, center.y),
+            ],
             Stroke::new(0.8_f32, SCREW_SLOT),
         );
         painter.line_segment(
-            [pos2(center.x, center.y - 2.2), pos2(center.x, center.y + 2.2)],
+            [
+                pos2(center.x, center.y - 2.2),
+                pos2(center.x, center.y + 2.2),
+            ],
             Stroke::new(0.8_f32, SCREW_SLOT),
         );
     }
@@ -296,9 +332,17 @@ impl PadCanvas {
                 Stroke::new(1.0_f32, Color32::from_rgba_premultiplied(10, 132, 255, 80)),
             );
             // Bordo primario
-            painter.rect_stroke(rect, Rounding::same(12.0), Stroke::new(2.0_f32, COLOR_APPLE_BLUE));
+            painter.rect_stroke(
+                rect,
+                Rounding::same(12.0),
+                Stroke::new(2.0_f32, COLOR_APPLE_BLUE),
+            );
         } else {
-            painter.rect_stroke(rect, Rounding::same(12.0), Stroke::new(1.0_f32, COLOR_BORDER_SUBTLE));
+            painter.rect_stroke(
+                rect,
+                Rounding::same(12.0),
+                Stroke::new(1.0_f32, COLOR_BORDER_SUBTLE),
+            );
         }
 
         // 4. Indice Discreto in alto a sinistra (es. R1·C1)
@@ -313,8 +357,8 @@ impl PadCanvas {
 
         // 5. Etichetta Principale in Grassetto al centro
         let label_text = config.map(|c| c.label.as_str()).unwrap_or("—");
-        let display_lbl = if label_text.len() > 8 {
-            format!("{}..", &label_text[..7])
+        let display_lbl = if label_text.chars().count() > 8 {
+            format!("{}…", label_text.chars().take(7).collect::<String>())
         } else {
             label_text.to_string()
         };
@@ -336,8 +380,21 @@ impl PadCanvas {
             pos2(rect.center().x, rect.max.y - 10.0),
             vec2(pill_w, pill_h),
         );
-        painter.rect_filled(pill_rect, Rounding::same(4.0), Color32::from_rgba_premultiplied(b_color.r() / 4, b_color.g() / 4, b_color.b() / 4, 180));
-        painter.rect_stroke(pill_rect, Rounding::same(4.0), Stroke::new(0.8_f32, b_color));
+        painter.rect_filled(
+            pill_rect,
+            Rounding::same(4.0),
+            Color32::from_rgba_premultiplied(
+                b_color.r() / 4,
+                b_color.g() / 4,
+                b_color.b() / 4,
+                180,
+            ),
+        );
+        painter.rect_stroke(
+            pill_rect,
+            Rounding::same(4.0),
+            Stroke::new(0.8_f32, b_color),
+        );
 
         painter.text(
             pill_rect.center(),
@@ -357,10 +414,7 @@ impl PadCanvas {
                 Color32::from_rgba_premultiplied(10, 132, 255, 90),
             )
         } else {
-            (
-                Color32::from_rgb(58, 58, 62),
-                Color32::TRANSPARENT,
-            )
+            (Color32::from_rgb(58, 58, 62), Color32::TRANSPARENT)
         };
 
         if is_active {
@@ -368,14 +422,22 @@ impl PadCanvas {
         }
 
         painter.rect_filled(capsule_rect, Rounding::same(5.0), color);
-        painter.rect_stroke(capsule_rect, Rounding::same(5.0), Stroke::new(1.0_f32, Color32::from_rgb(80, 80, 85)));
+        painter.rect_stroke(
+            capsule_rect,
+            Rounding::same(5.0),
+            Stroke::new(1.0_f32, Color32::from_rgb(80, 80, 85)),
+        );
 
         painter.text(
             pos2(center.x, center.y + 16.0),
             Align2::CENTER_TOP,
             format!("L{}", layer_num),
             FontId::proportional(9.0),
-            if is_active { COLOR_TEXT_PRIMARY } else { COLOR_TEXT_TERTIARY },
+            if is_active {
+                COLOR_TEXT_PRIMARY
+            } else {
+                COLOR_TEXT_TERTIARY
+            },
         );
     }
 
@@ -383,24 +445,44 @@ impl PadCanvas {
     fn draw_brushed_knob(painter: &Painter, center: Pos2, radius: f32, enc_idx: u8) {
         // Anello metallico esterno
         painter.circle_filled(center, radius, Color32::from_rgb(52, 52, 56));
-        painter.circle_stroke(center, radius, Stroke::new(1.5_f32, Color32::from_rgb(142, 142, 147)));
+        painter.circle_stroke(
+            center,
+            radius,
+            Stroke::new(1.5_f32, Color32::from_rgb(142, 142, 147)),
+        );
 
         // Tacche radiali esterne (12 tacche stile ghiera orologio)
         for i in 0..12 {
             let angle = (i as f32) * (2.0 * PI / 12.0);
-            let p1 = pos2(center.x + angle.cos() * (radius - 5.0), center.y + angle.sin() * (radius - 5.0));
-            let p2 = pos2(center.x + angle.cos() * (radius - 1.0), center.y + angle.sin() * (radius - 1.0));
-            painter.line_segment([p1, p2], Stroke::new(1.0_f32, Color32::from_rgb(174, 174, 178)));
+            let p1 = pos2(
+                center.x + angle.cos() * (radius - 5.0),
+                center.y + angle.sin() * (radius - 5.0),
+            );
+            let p2 = pos2(
+                center.x + angle.cos() * (radius - 1.0),
+                center.y + angle.sin() * (radius - 1.0),
+            );
+            painter.line_segment(
+                [p1, p2],
+                Stroke::new(1.0_f32, Color32::from_rgb(174, 174, 178)),
+            );
         }
 
         // Disco interno in alluminio concentrico
         painter.circle_filled(center, radius - 7.0, Color32::from_rgb(40, 40, 44));
-        painter.circle_stroke(center, radius - 7.0, Stroke::new(1.0_f32, Color32::from_rgb(70, 70, 75)));
+        painter.circle_stroke(
+            center,
+            radius - 7.0,
+            Stroke::new(1.0_f32, Color32::from_rgb(70, 70, 75)),
+        );
 
         // Linea indicatrice fisica (tacchetta ore 12)
         let indicator_p1 = pos2(center.x, center.y - 12.0);
         let indicator_p2 = pos2(center.x, center.y - (radius - 9.0));
-        painter.line_segment([indicator_p1, indicator_p2], Stroke::new(2.0_f32, COLOR_APPLE_BLUE));
+        painter.line_segment(
+            [indicator_p1, indicator_p2],
+            Stroke::new(2.0_f32, COLOR_APPLE_BLUE),
+        );
 
         // Testo encoder al centro
         let enc_title = if enc_idx == 0 { "ENC 1" } else { "ENC 2" };

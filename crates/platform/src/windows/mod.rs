@@ -66,11 +66,17 @@ impl PlatformBackend for WindowsPlatform {
 }
 
 impl WindowManagerBackend for WindowsPlatform {
-    fn capture_foreground_window(&self, exclude_pid: u32) -> Result<ForegroundAppInfo, PlatformError> {
+    fn capture_foreground_window(
+        &self,
+        exclude_pid: u32,
+    ) -> Result<ForegroundAppInfo, PlatformError> {
         self.windows.capture_foreground_window(exclude_pid)
     }
 
-    fn list_visible_windows(&self, exclude_pid: u32) -> Result<Vec<ForegroundAppInfo>, PlatformError> {
+    fn list_visible_windows(
+        &self,
+        exclude_pid: u32,
+    ) -> Result<Vec<ForegroundAppInfo>, PlatformError> {
         self.windows.list_visible_windows(exclude_pid)
     }
 
@@ -81,7 +87,8 @@ impl WindowManagerBackend for WindowsPlatform {
         launch_cmd: Option<(&Path, &[String], Option<&Path>)>,
         timeout_ms: u64,
     ) -> Result<WindowActionResult, PlatformError> {
-        self.windows.launch_or_place_window(selector, placement, launch_cmd, timeout_ms)
+        self.windows
+            .launch_or_place_window(selector, placement, launch_cmd, timeout_ms)
     }
 }
 

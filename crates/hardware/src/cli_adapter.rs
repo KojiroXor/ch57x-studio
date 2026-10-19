@@ -95,7 +95,11 @@ impl Ch57xCli {
 
         // 4. PATH di sistema
         if let Ok(path_var) = std::env::var("PATH") {
-            let sep = if cfg!(target_os = "windows") { ';' } else { ':' };
+            let sep = if cfg!(target_os = "windows") {
+                ';'
+            } else {
+                ':'
+            };
             for part in path_var.split(sep) {
                 let candidate = PathBuf::from(part).join(exe_name);
                 if candidate.exists() {

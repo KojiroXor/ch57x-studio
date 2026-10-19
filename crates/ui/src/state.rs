@@ -9,8 +9,8 @@ use ch57x_domain::actions::{
     WindowSelector,
 };
 use ch57x_domain::hardware::{
-    EncoderEvent, LayerIndex, SlotId, BUTTONS_PER_LAYER,
-    ENCODERS_PER_LAYER, LAYER_COUNT, TOTAL_SLOTS,
+    EncoderEvent, LayerIndex, SlotId, BUTTONS_PER_LAYER, ENCODERS_PER_LAYER, LAYER_COUNT,
+    TOTAL_SLOTS,
 };
 use ch57x_domain::profile::{Profile, SlotConfig};
 use ch57x_domain::triggers::PhantomTrigger;
@@ -361,7 +361,7 @@ impl UiState {
         });
         self.set_status(
             format!(
-                "🎯 Porta in primo piano la finestra desiderata... ({:.0}s)",
+                "Porta in primo piano la finestra desiderata... ({:.0}s)",
                 duration_secs
             ),
             StatusLevel::Info,
@@ -478,11 +478,10 @@ impl UiState {
             }
             "HidNative" => {
                 if let Some(cfg) = self.get_slot_config_mut(slot) {
-                    cfg.binding = SlotBinding::HidNative(
-                        ch57x_domain::actions::HidAction::ConsumerMedia(
+                    cfg.binding =
+                        SlotBinding::HidNative(ch57x_domain::actions::HidAction::ConsumerMedia(
                             ch57x_domain::actions::MediaToken::PlayPause,
-                        ),
-                    );
+                        ));
                     self.mark_dirty();
                 }
             }
@@ -526,10 +525,9 @@ impl UiState {
             }
             "ContextDispatch" => {
                 let fallback = ActionId::new_v4();
-                self.profile.actions.insert(
-                    fallback,
-                    ActionDefinition::ShowHud { duration_ms: 1500 },
-                );
+                self.profile
+                    .actions
+                    .insert(fallback, ActionDefinition::ShowHud { duration_ms: 1500 });
                 let action = ActionDefinition::ContextDispatch(ContextDispatchAction {
                     rules: Vec::new(),
                     fallback_action_id: fallback,

@@ -28,7 +28,7 @@ impl LayerIndex {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum ControlId {
-    Button { row: u8, col: u8 }, // row: 0..=2, col: 0..=3
+    Button { row: u8, col: u8 },                // row: 0..=2, col: 0..=3
     Encoder { index: u8, event: EncoderEvent }, // index: 0 (Top), 1 (Bottom)
 }
 
@@ -47,7 +47,10 @@ pub struct SlotId {
 
 impl SlotId {
     pub fn new_button(layer: u8, row: u8, col: u8) -> Option<Self> {
-        if (layer as usize) < LAYER_COUNT && (row as usize) < ROW_COUNT && (col as usize) < COL_COUNT {
+        if (layer as usize) < LAYER_COUNT
+            && (row as usize) < ROW_COUNT
+            && (col as usize) < COL_COUNT
+        {
             Some(Self {
                 layer: LayerIndex(layer),
                 control: ControlId::Button { row, col },
@@ -102,7 +105,10 @@ impl SlotId {
                 for ev in [EncoderEvent::Ccw, EncoderEvent::Press, EncoderEvent::Cw] {
                     slots.push(SlotId {
                         layer: LayerIndex(l),
-                        control: ControlId::Encoder { index: enc, event: ev },
+                        control: ControlId::Encoder {
+                            index: enc,
+                            event: ev,
+                        },
                     });
                 }
             }
@@ -142,9 +148,16 @@ mod tests {
         let mut unique_indices = HashSet::new();
 
         for (idx, slot) in slots.iter().enumerate() {
-            assert_eq!(slot.global_index(), idx, "Slot global index must match position");
+            assert_eq!(
+                slot.global_index(),
+                idx,
+                "Slot global index must match position"
+            );
             assert!(unique_slots.insert(*slot), "SlotId must be unique");
-            assert!(unique_indices.insert(slot.global_index()), "Global index must be unique");
+            assert!(
+                unique_indices.insert(slot.global_index()),
+                "Global index must be unique"
+            );
         }
 
         assert_eq!(unique_slots.len(), 54);
@@ -167,7 +180,10 @@ mod tests {
             }
 
             assert_eq!(buttons, 12, "Each layer must have 12 buttons");
-            assert_eq!(encoder_events, 6, "Each layer must have 2 encoders * 3 events = 6 events");
+            assert_eq!(
+                encoder_events, 6,
+                "Each layer must have 2 encoders * 3 events = 6 events"
+            );
         }
     }
 }

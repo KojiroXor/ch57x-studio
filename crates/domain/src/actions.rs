@@ -99,10 +99,7 @@ impl MouseToken {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HidAction {
-    KeyboardChord {
-        modifiers: Vec<HidMod>,
-        key: String,
-    },
+    KeyboardChord { modifiers: Vec<HidMod>, key: String },
     ConsumerMedia(MediaToken),
     MouseAction(MouseToken),
 }
@@ -123,7 +120,7 @@ pub enum WindowCoordinates {
         height: i32,
     },
     Normalized {
-        x: f32,      // 0.0 .. 1.0
+        x: f32, // 0.0 .. 1.0
         y: f32,
         width: f32,
         height: f32,
@@ -174,12 +171,25 @@ pub enum MacroConcurrencyPolicy {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum MacroStep {
-    KeyTap { key: String },
-    KeyChord { modifiers: Vec<String>, key: String },
-    TypeText { text: String },
-    ClipboardPaste { text: String, restore_previous_clipboard: bool },
+    KeyTap {
+        key: String,
+    },
+    KeyChord {
+        modifiers: Vec<String>,
+        key: String,
+    },
+    TypeText {
+        text: String,
+    },
+    ClipboardPaste {
+        text: String,
+        restore_previous_clipboard: bool,
+    },
     DelayMs(u64),
-    WaitForWindow { selector: WindowSelector, timeout_ms: u64 },
+    WaitForWindow {
+        selector: WindowSelector,
+        timeout_ms: u64,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

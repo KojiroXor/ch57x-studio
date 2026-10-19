@@ -1,0 +1,142 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint-and-check:
+    name: Lint & Check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux Dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxtst-dev libxrandr-dev libxi-dev libasound2-dev libudev-dev pkg-config
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo Dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-check-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-check-
+
+      - name: Check Code Formatting
+        run: cargo fmt --all -- --check
+
+      - name: Workspace Cargo Check
+        run: cargo check --workspace
+
+      - name: Clippy Linter (-D warnings)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test-suite:
+    name: Test Suite (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux Dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxtst-dev libxrandr-dev libxi-dev libasound2-dev libudev-dev pkg-config
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo Dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-test-
+
+      - name: Run Workspace Tests
+        run: cargo test --workspace --verbose
+
+  build-release-windows:
+    name: Build & Package Windows Release
+    needs: [lint-and-check, test-suite]
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo Build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: windows-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            windows-release-
+
+      - name: Build Release Binary
+        run: cargo build --release --bin vortexdeck
+
+      - name: Package Distribution Folder
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "dist/VortexDeck/bin"
+          Copy-Item -Force "target/release/vortexdeck.exe" "dist/VortexDeck/vortexdeck.exe"
+          if (Test-Path "bin/ch57x-keyboard-tool.exe") {
+            Copy-Item -Force "bin/ch57x-keyboard-tool.exe" "dist/VortexDeck/bin/ch57x-keyboard-tool.exe"
+          }
+          if (Test-Path "bin/example-mapping.yaml") {
+            Copy-Item -Force "bin/example-mapping.yaml" "dist/VortexDeck/bin/example-mapping.yaml"
+          }
+          if (Test-Path "dist/VortexDeck/README.txt") {
+            Write-Host "README.txt verified."
+          } else {
+            "VortexDeck (CH57x Studio) Release" | Out-File -FilePath "dist/VortexDeck/README.txt" -Encoding utf8
+          }
+
+      - name: Upload Release Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VortexDeck-Windows-x64
+          path: dist/VortexDeck
+          if-no-files-found: error

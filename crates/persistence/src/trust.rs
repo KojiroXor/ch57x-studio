@@ -189,16 +189,23 @@ mod tests {
 
         // Write a mock binary file
         let mut f = File::create(&exe_path).unwrap();
-        f.write_all(b"MZ\x90\x00MockExecutableBinaryContent12345").unwrap();
+        f.write_all(b"MZ\x90\x00MockExecutableBinaryContent12345")
+            .unwrap();
         f.flush().unwrap();
         drop(f);
 
         let mut store = TrustStore::open_or_default(&temp_dir).unwrap();
-        assert!(!store.is_trusted(&exe_path), "Should not be trusted initially");
+        assert!(
+            !store.is_trusted(&exe_path),
+            "Should not be trusted initially"
+        );
 
         // Trust the executable
         store.trust_path(&exe_path).expect("Failed to trust");
-        assert!(store.is_trusted(&exe_path), "Must be trusted after approval");
+        assert!(
+            store.is_trusted(&exe_path),
+            "Must be trusted after approval"
+        );
 
         let hash = compute_file_sha256(&exe_path).unwrap();
         assert!(store.is_hash_trusted(&hash));
@@ -209,7 +216,9 @@ mod tests {
 
         // Tamper with the executable (simulating modification or malware replacement)
         let mut f_tampered = File::create(&exe_path).unwrap();
-        f_tampered.write_all(b"TamperedMaliciousExecutableBytes!").unwrap();
+        f_tampered
+            .write_all(b"TamperedMaliciousExecutableBytes!")
+            .unwrap();
         f_tampered.flush().unwrap();
         drop(f_tampered);
 

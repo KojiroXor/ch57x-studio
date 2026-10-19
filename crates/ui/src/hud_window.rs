@@ -7,9 +7,7 @@ use crate::pad_canvas::badge_color;
 use crate::state::UiState;
 use crate::theme::*;
 use ch57x_domain::hardware::{ControlId, EncoderEvent, LayerIndex, SlotId, COL_COUNT, ROW_COUNT};
-use egui::{
-    pos2, vec2, Align2, Color32, Context, FontId, Rounding, Stroke, Ui, Vec2, Window,
-};
+use egui::{pos2, vec2, Align2, Color32, Context, FontId, Rounding, Stroke, Ui, Vec2, Window};
 
 pub struct HudWindow {
     pub is_visible: bool,
@@ -133,8 +131,16 @@ impl HudWindow {
                     ui.add_space(4.0);
 
                     for enc_idx in 0..2u8 {
-                        let enc_title = if enc_idx == 0 { "Encoder 1 (Top)" } else { "Encoder 2 (Bot)" };
-                        ui.label(egui::RichText::new(enc_title).font(FontId::proportional(10.0)).color(COLOR_TEXT_TERTIARY));
+                        let enc_title = if enc_idx == 0 {
+                            "Encoder 1 (Top)"
+                        } else {
+                            "Encoder 2 (Bot)"
+                        };
+                        ui.label(
+                            egui::RichText::new(enc_title)
+                                .font(FontId::proportional(10.0))
+                                .color(COLOR_TEXT_TERTIARY),
+                        );
 
                         let events = [
                             (EncoderEvent::Ccw, "CCW"),
@@ -156,7 +162,8 @@ impl HudWindow {
                                 let label = config.map(|c| c.label.as_str()).unwrap_or(symbol);
                                 let is_sel = state.selected_slot == Some(slot);
 
-                                let (pill_rect, _) = ui.allocate_exact_size(vec2(52.0, 34.0), egui::Sense::hover());
+                                let (pill_rect, _) =
+                                    ui.allocate_exact_size(vec2(52.0, 34.0), egui::Sense::hover());
                                 let bg = if is_sel {
                                     Color32::from_rgb(30, 45, 65)
                                 } else {
@@ -166,7 +173,14 @@ impl HudWindow {
                                 ui.painter().rect_stroke(
                                     pill_rect,
                                     Rounding::same(6.0),
-                                    Stroke::new(1.0_f32, if is_sel { COLOR_APPLE_BLUE } else { COLOR_BORDER_SUBTLE }),
+                                    Stroke::new(
+                                        1.0_f32,
+                                        if is_sel {
+                                            COLOR_APPLE_BLUE
+                                        } else {
+                                            COLOR_BORDER_SUBTLE
+                                        },
+                                    ),
                                 );
 
                                 // Symbol in alto
@@ -188,8 +202,8 @@ impl HudWindow {
                                 );
 
                                 // Label al centro
-                                let display_lbl = if label.len() > 6 {
-                                    format!("{}..", &label[..5])
+                                let display_lbl = if label.chars().count() > 6 {
+                                    format!("{}…", label.chars().take(5).collect::<String>())
                                 } else {
                                     label.to_string()
                                 };
@@ -242,8 +256,8 @@ impl HudWindow {
 
         // Label tasto
         let label_text = config.map(|c| c.label.as_str()).unwrap_or("—");
-        let display_lbl = if label_text.len() > 7 {
-            format!("{}..", &label_text[..6])
+        let display_lbl = if label_text.chars().count() > 8 {
+            format!("{}…", label_text.chars().take(7).collect::<String>())
         } else {
             label_text.to_string()
         };

@@ -26,7 +26,10 @@ impl UsbStatus {
     }
 
     pub fn is_detected(&self) -> bool {
-        matches!(self, UsbStatus::Ready { .. } | UsbStatus::DetectedAccessDenied)
+        matches!(
+            self,
+            UsbStatus::Ready { .. } | UsbStatus::DetectedAccessDenied
+        )
     }
 
     pub fn vid_pid(&self) -> Option<(u16, u16)> {
@@ -111,7 +114,10 @@ mod windows_probe {
     const KEY_READ: u32 = 0x20019;
 
     fn to_wide(s: &str) -> Vec<u16> {
-        OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
+        OsStr::new(s)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect()
     }
 
     pub fn check_usbdk_service() -> bool {

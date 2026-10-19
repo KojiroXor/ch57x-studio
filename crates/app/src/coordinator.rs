@@ -8,11 +8,11 @@
 //! - Il dispatching in tempo reale delle automazioni host (`ch57x-runtime`)
 //! - La registrazione delle hotkey globali F13..F24 (`ch57x-platform`)
 
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use crossbeam_channel::{unbounded, Receiver, Sender};
 use tracing::{error, info, warn};
 
 use ch57x_compiler::allocator::allocate_triggers;
@@ -24,7 +24,9 @@ use ch57x_domain::validation::validate_profile;
 use ch57x_hardware::cli_adapter::Ch57xCli;
 use ch57x_hardware::usb_probe::{probe_usb_status, UsbStatus};
 use ch57x_persistence::journal::DeploymentJournal;
-use ch57x_persistence::storage::{get_app_data_dir, get_profiles_dir, load_profile_from_path, save_profile_to_path};
+use ch57x_persistence::storage::{
+    get_app_data_dir, get_profiles_dir, load_profile_from_path, save_profile_to_path,
+};
 use ch57x_persistence::trust::TrustStore;
 use ch57x_platform::get_platform;
 use ch57x_platform::traits::PlatformBackend;
@@ -90,7 +92,10 @@ impl AppCoordinator {
                     p
                 }
                 Err(e) => {
-                    warn!("Errore caricamento profilo ({:?}), uso profilo predefinito", e);
+                    warn!(
+                        "Errore caricamento profilo ({:?}), uso profilo predefinito",
+                        e
+                    );
                     Profile::default()
                 }
             }
@@ -128,21 +133,22 @@ impl AppCoordinator {
 
         // Se non siamo in safe mode, registra le hotkey globali per tutti i trigger allocati
         if !safe_mode {
-            let triggers: Vec<PhantomTrigger> = profile.trigger_allocation.values().copied().collect();
+            let triggers: Vec<PhantomTrigger> =
+                profile.trigger_allocation.values().copied().collect();
             if !triggers.is_empty() {
                 if let Err(e) = platform.hotkeys().register_triggers(&triggers) {
                     error!("Errore nella registrazione iniziale delle hotkey: {:?}", e);
-                    ui_state.set_status(
-                        format!("Conflitto Hotkey: {:?}", e),
-                        StatusLevel::Warning,
-                    );
+                    ui_state.set_status(format!("Conflitto Hotkey: {:?}", e), StatusLevel::Warning);
                 } else {
                     info!("Registrate {} hotkey globali F13..F24", triggers.len());
                 }
             }
         } else {
             info!("Safe mode attiva: registrazione hotkey globali disabilitata.");
-            ui_state.set_status("Avviato in Safe Mode (Hotkey disabilitate)", StatusLevel::Info);
+            ui_state.set_status(
+                "Avviato in Safe Mode (Hotkey disabilitate)",
+                StatusLevel::Info,
+            );
         }
 
         // Thread dedicato background per l'inoltro diretto delle hotkey a RuntimeDispatcher (Bug 1 & 2)
@@ -207,9 +213,18 @@ impl AppCoordinator {
         while let Ok(cmd) = self.command_receiver.try_recv() {
             match cmd {
                 CoordinatorCommand::TriggerEvent(trigger) => {
-                    info!("Ricevuto trigger hardware/virtuale: {}", trigger.yaml_token());
+                    info!(
+                        "Ricevuto trigger hardware/virtuale: {}",
+                        trigger.yaml_token()
+                    );
                     // Visual feedback nella UI: seleziona lo slot corrispondente se presente
-                    if let Some((&slot_idx, _)) = self.ui_state.profile.trigger_allocation.iter().find(|(_, &t)| t == trigger) {
+                    if let Some((&slot_idx, _)) = self
+                        .ui_state
+                        .profile
+                        .trigger_allocation
+                        .iter()
+                        .find(|(_, &t)| t == trigger)
+                    {
                         if let Some(slot_cfg) = self.ui_state.profile.slots.get(&slot_idx) {
                             self.ui_state.selected_slot = Some(slot_cfg.slot);
                         }
@@ -228,9 +243,11 @@ impl AppCoordinator {
                     let was_paused = self.dispatcher.is_paused();
                     self.dispatcher.set_paused(!was_paused);
                     if !was_paused {
-                        self.ui_state.set_status("Automazioni in PAUSA", StatusLevel::Warning);
+                        self.ui_state
+                            .set_status("Automazioni in PAUSA", StatusLevel::Warning);
                     } else {
-                        self.ui_state.set_status("Automazioni ATTIVE", StatusLevel::Success);
+                        self.ui_state
+                            .set_status("Automazioni ATTIVE", StatusLevel::Success);
                     }
                 }
                 CoordinatorCommand::SwitchLayer(layer) => {
@@ -246,12 +263,18 @@ impl AppCoordinator {
                 }
                 CoordinatorCommand::FlashSuccess => {
                     self.save_active_profile();
-                    self.journal = DeploymentJournal::load_or_recover(&self.base_dir).unwrap_or_default();
-                    self.ui_state.set_status("Flashing hardware completato con SUCCESSO!", StatusLevel::Success);
+                    self.journal =
+                        DeploymentJournal::load_or_recover(&self.base_dir).unwrap_or_default();
+                    self.ui_state.set_status(
+                        "Flashing hardware completato con SUCCESSO!",
+                        StatusLevel::Success,
+                    );
                 }
                 CoordinatorCommand::FlashFailed(err) => {
-                    self.journal = DeploymentJournal::load_or_recover(&self.base_dir).unwrap_or_default();
-                    self.ui_state.set_status(format!("Flashing fallito: {err}"), StatusLevel::Error);
+                    self.journal =
+                        DeploymentJournal::load_or_recover(&self.base_dir).unwrap_or_default();
+                    self.ui_state
+                        .set_status(format!("Flashing fallito: {err}"), StatusLevel::Error);
                 }
             }
         }
@@ -263,13 +286,17 @@ impl AppCoordinator {
 
         // Alloca eventuali trigger mancanti con gestione errore (Bug 8)
         if let Err(e) = allocate_triggers(&mut self.profile) {
-            self.ui_state.set_status(format!("Allocazione trigger fallita: {}", e), StatusLevel::Error);
+            self.ui_state.set_status(
+                format!("Allocazione trigger fallita: {}", e),
+                StatusLevel::Error,
+            );
             return false;
         }
 
         // Verifica semantica prima del salvataggio
         if let Err(e) = validate_profile(&self.profile) {
-            self.ui_state.set_status(format!("Validazione fallita: {}", e), StatusLevel::Error);
+            self.ui_state
+                .set_status(format!("Validazione fallita: {}", e), StatusLevel::Error);
             return false;
         }
 
@@ -279,17 +306,22 @@ impl AppCoordinator {
             Ok(_) => {
                 self.ui_state.clear_dirty();
                 self.dispatcher.set_profile(self.profile.clone());
-                self.ui_state.set_status("Profilo salvato e runtime host aggiornato.", StatusLevel::Success);
+                self.ui_state.set_status(
+                    "Profilo salvato e runtime host aggiornato.",
+                    StatusLevel::Success,
+                );
 
                 // Aggiorna registrazione hotkeys
-                let triggers: Vec<PhantomTrigger> = self.profile.trigger_allocation.values().copied().collect();
+                let triggers: Vec<PhantomTrigger> =
+                    self.profile.trigger_allocation.values().copied().collect();
                 let _ = self.platform.hotkeys().unregister_all();
                 let _ = self.platform.hotkeys().register_triggers(&triggers);
 
                 true
             }
             Err(e) => {
-                self.ui_state.set_status(format!("Errore salvataggio: {:?}", e), StatusLevel::Error);
+                self.ui_state
+                    .set_status(format!("Errore salvataggio: {:?}", e), StatusLevel::Error);
                 false
             }
         }
@@ -299,25 +331,37 @@ impl AppCoordinator {
     pub fn validate_configuration(&mut self) -> Option<String> {
         let mut profile = self.ui_state.profile.clone();
         if let Err(e) = allocate_triggers(&mut profile) {
-            self.ui_state.set_status(format!("Errore allocazione trigger: {:?}", e), StatusLevel::Error);
+            self.ui_state.set_status(
+                format!("Errore allocazione trigger: {:?}", e),
+                StatusLevel::Error,
+            );
             return None;
         }
 
         let yaml_str = match generate_yaml(&profile) {
             Ok(y) => y,
             Err(e) => {
-                self.ui_state.set_status(format!("Errore generazione YAML: {:?}", e), StatusLevel::Error);
+                self.ui_state.set_status(
+                    format!("Errore generazione YAML: {:?}", e),
+                    StatusLevel::Error,
+                );
                 return None;
             }
         };
 
         match self.cli.validate(&yaml_str) {
             Ok(_) => {
-                self.ui_state.set_status("Configurazione hardware VALIDA (ch57x-keyboard-tool OK)", StatusLevel::Success);
+                self.ui_state.set_status(
+                    "Configurazione hardware VALIDA (ch57x-keyboard-tool OK)",
+                    StatusLevel::Success,
+                );
                 Some(yaml_str)
             }
             Err(e) => {
-                self.ui_state.set_status(format!("Validazione CLI fallita: {}", e), StatusLevel::Error);
+                self.ui_state.set_status(
+                    format!("Validazione CLI fallita: {}", e),
+                    StatusLevel::Error,
+                );
                 None
             }
         }
@@ -328,13 +372,20 @@ impl AppCoordinator {
         let mut profile = self.ui_state.profile.clone();
         allocate_triggers(&mut profile).map_err(|e| format!("Allocazione trigger fallita: {e}"))?;
 
-        let yaml_str = generate_yaml(&profile).map_err(|e| format!("Generazione YAML fallita: {e}"))?;
-        self.cli.validate(&yaml_str).map_err(|e| format!("Validazione hardware CLI fallita: {e}"))?;
+        let yaml_str =
+            generate_yaml(&profile).map_err(|e| format!("Generazione YAML fallita: {e}"))?;
+        self.cli
+            .validate(&yaml_str)
+            .map_err(|e| format!("Validazione hardware CLI fallita: {e}"))?;
 
         let last_hash = self.journal.last_uploaded_yaml_hash.clone();
         let decision = DeploymentDecision::new(&yaml_str, last_hash.as_deref());
 
-        let modified_slots = profile.slots.iter().filter(|(_, s)| !matches!(s.binding, ch57x_domain::actions::SlotBinding::Disabled)).count();
+        let modified_slots = profile
+            .slots
+            .iter()
+            .filter(|(_, s)| !matches!(s.binding, ch57x_domain::actions::SlotBinding::Disabled))
+            .count();
 
         Ok(HardwareFlashPreview {
             yaml_str,
@@ -346,7 +397,11 @@ impl AppCoordinator {
     }
 
     /// Esegue il flashing hardware in un thread background non-bloccante (Bug 4)
-    pub fn start_hardware_flash(&mut self, yaml_str: String, current_hash: String) -> Result<(), String> {
+    pub fn start_hardware_flash(
+        &mut self,
+        yaml_str: String,
+        current_hash: String,
+    ) -> Result<(), String> {
         if self.is_flashing() {
             return Err("Operazione di flashing già in corso!".into());
         }
@@ -358,7 +413,10 @@ impl AppCoordinator {
         let cmd_tx = self.command_sender.clone();
 
         is_flashing.store(true, Ordering::SeqCst);
-        self.ui_state.set_status("Scrittura memoria flash hardware in corso...", StatusLevel::Warning);
+        self.ui_state.set_status(
+            "Scrittura memoria flash hardware in corso...",
+            StatusLevel::Warning,
+        );
 
         std::thread::Builder::new()
             .name("vortexdeck-hardware-flasher".into())

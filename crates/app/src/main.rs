@@ -1,3 +1,4 @@
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 //! VortexDeck (CH57x Studio) — Main Executable Entrypoint
 //!
 //! Supporta:
@@ -21,8 +22,8 @@ use ch57x_ui::state::{ActiveView, StatusLevel};
 use ch57x_ui::theme::*;
 
 use coordinator::{AppCoordinator, CoordinatorCommand, HardwareFlashPreview};
-use tray::{TrayAction, TrayHandle};
 use egui::{vec2, Color32, FontId, Margin, Pos2, Rounding, Stroke, TopBottomPanel};
+use tray::{TrayAction, TrayHandle};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -31,6 +32,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
     let args: Vec<String> = env::args().collect();
+
+    // Collega la console padre se lanciato con argomenti CLI su Windows
+    #[cfg(target_os = "windows")]
+    if args.len() > 1 {
+        unsafe {
+            let _ = windows::Win32::System::Console::AttachConsole(
+                windows::Win32::System::Console::ATTACH_PARENT_PROCESS,
+            );
+        }
+    }
 
     // 1. Parsing argomenti CLI
     if args.contains(&"--help".to_string()) || args.contains(&"-h".to_string()) {
@@ -58,10 +69,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
         use windows::Win32::System::Threading::CreateMutexW;
 
-        let handle = unsafe { CreateMutexW(None, true, w!("Local\\VortexDeck_SingleInstance_Mutex")) };
+        let handle =
+            unsafe { CreateMutexW(None, true, w!("Local\\VortexDeck_SingleInstance_Mutex")) };
         if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
             eprintln!("Un'altra istanza di VortexDeck è già in esecuzione.");
-            println!("Suggerimento: Controlla la System Tray (icona vicino all'orologio di Windows).");
+            println!(
+                "Suggerimento: Controlla la System Tray (icona vicino all'orologio di Windows)."
+            );
             return Ok(());
         }
         handle
@@ -90,15 +104,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         #[cfg(target_os = "windows")]
                         {
                             if let Ok(handle) = _mutex_guard {
-                                unsafe { let _ = windows::Win32::Foundation::CloseHandle(handle); };
+                                unsafe {
+                                    let _ = windows::Win32::Foundation::CloseHandle(handle);
+                                };
                             }
                         }
                         let exe = std::env::current_exe()?;
-                        let _ = std::process::Command::new(exe).spawn();
+                        let mut cmd = std::process::Command::new(exe);
+                        #[cfg(target_os = "windows")]
+                        {
+                            use std::os::windows::process::CommandExt;
+                            cmd.creation_flags(0x08000000);
+                        }
+                        let _ = cmd.spawn();
                         return Ok(());
                     }
                     TrayAction::TogglePause => {
-                        coordinator.command_sender.send(CoordinatorCommand::TogglePause)?;
+                        coordinator
+                            .command_sender
+                            .send(CoordinatorCommand::TogglePause)?;
                     }
                     TrayAction::ShowHud => {
                         println!("Richiesta HUD OSD in background.");
@@ -121,6 +145,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .with_title("VortexDeck")
             .with_inner_size([1240.0, 780.0])
             .with_min_inner_size([1000.0, 620.0])
+            .with_transparent(true)
             .with_active(true),
         ..Default::default()
     };
@@ -156,9 +181,6 @@ struct VortexDeckApp {
 
 impl eframe::App for VortexDeckApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Applica costantemente il tema Cupertino Dark
-        apply_cupertino_theme(ctx);
-
         // Intercetta la chiusura della finestra con la 'X' per nascondere in Tray (Bug 6)
         if ctx.input(|i| i.viewport().close_requested()) && !self.is_quitting {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
@@ -173,7 +195,10 @@ impl eframe::App for VortexDeckApp {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
                 }
                 TrayAction::TogglePause => {
-                    let _ = self.coordinator.command_sender.send(CoordinatorCommand::TogglePause);
+                    let _ = self
+                        .coordinator
+                        .command_sender
+                        .send(CoordinatorCommand::TogglePause);
                 }
                 TrayAction::ShowHud => {
                     self.hud_dismiss_at = Some(Instant::now() + Duration::from_millis(1500));
@@ -342,9 +367,19 @@ impl eframe::App for VortexDeckApp {
                             StatusLevel::Warning => COLOR_APPLE_ORANGE,
                             StatusLevel::Error => COLOR_APPLE_RED,
                         };
-                        draw_status_dot(ui, Pos2::new(ui.cursor().min.x + 4.0, ui.cursor().min.y + 9.0), col, &alert.text);
+                        draw_status_dot(
+                            ui,
+                            Pos2::new(ui.cursor().min.x + 4.0, ui.cursor().min.y + 9.0),
+                            col,
+                            &alert.text,
+                        );
                     } else {
-                        draw_status_dot(ui, Pos2::new(ui.cursor().min.x + 4.0, ui.cursor().min.y + 9.0), COLOR_TEXT_SECONDARY, "Pronto");
+                        draw_status_dot(
+                            ui,
+                            Pos2::new(ui.cursor().min.x + 4.0, ui.cursor().min.y + 9.0),
+                            COLOR_TEXT_SECONDARY,
+                            "Pronto",
+                        );
                     }
 
                     // Destra: Info Profilo, Trigger Allocati e Versione
@@ -372,15 +407,16 @@ impl eframe::App for VortexDeckApp {
             });
 
         // ---------------------------------------------------------------------
-        // PANNELLO CENTRALE PRINCIPALE (StudioUi)
+        // PANNELLO CENTRALE PRINCIPALE (StudioUi con Deep Space Canvas)
         // ---------------------------------------------------------------------
         egui::CentralPanel::default()
             .frame(egui::Frame {
-                fill: COLOR_OBSIDIAN_BG,
+                fill: Color32::from_rgb(11, 15, 25),
                 inner_margin: Margin::same(16.0),
                 ..Default::default()
             })
             .show(ctx, |ui| {
+                ch57x_ui::paint_deep_space_canvas(ui.painter(), ui.max_rect());
                 self.studio_ui.show(
                     ui,
                     &mut self.coordinator.ui_state,
@@ -527,15 +563,46 @@ impl eframe::App for VortexDeckApp {
         }
 
         // ---------------------------------------------------------------------
-        // HUD OSD FLOTTANTE CON DISMISS AUTOMATICO 1.5s (Bug 12)
+        // HUD OSD FLOTTANTE SECONDARIO (Multi-Viewport indipendente anche in Tray)
         // ---------------------------------------------------------------------
         if let Some(dismiss_time) = self.hud_dismiss_at {
             if Instant::now() < dismiss_time {
-                self.studio_ui.hud.is_visible = true;
-                self.studio_ui.hud.show(ctx, &mut self.coordinator.ui_state);
+                ctx.show_viewport_immediate(
+                    egui::ViewportId::from_hash_of("vortexdeck_hud_osd"),
+                    egui::ViewportBuilder::default()
+                        .with_title("VortexDeck HUD OSD")
+                        .with_decorations(false)
+                        .with_always_on_top()
+                        .with_transparent(true)
+                        .with_mouse_passthrough(true)
+                        .with_resizable(false)
+                        .with_inner_size([720.0, 240.0]),
+                    |sub_ctx, _class| {
+                        egui::CentralPanel::default()
+                            .frame(egui::Frame {
+                                fill: Color32::from_rgba_premultiplied(16, 20, 30, 235),
+                                rounding: Rounding::same(16.0),
+                                stroke: Stroke::new(
+                                    1.0_f32,
+                                    Color32::from_rgba_premultiplied(255, 255, 255, 30),
+                                ),
+                                inner_margin: Margin::same(14.0),
+                                ..Default::default()
+                            })
+                            .show(sub_ctx, |ui| {
+                                ch57x_ui::paint_specular_rim_light(
+                                    ui.painter(),
+                                    ui.max_rect(),
+                                    Rounding::same(16.0),
+                                );
+                                self.studio_ui
+                                    .hud
+                                    .show_content(ui, &mut self.coordinator.ui_state);
+                            });
+                    },
+                );
                 ctx.request_repaint_after(Duration::from_millis(30));
             } else {
-                self.studio_ui.hud.is_visible = false;
                 self.hud_dismiss_at = None;
             }
         }

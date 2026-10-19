@@ -3,9 +3,7 @@
 //! Fornisce palette colori, stili per i widget egui e helper di disegno
 //! per indicatori geometrici luminosi e pill badges minimali.
 
-use egui::{
-    vec2, Color32, Context, FontId, Margin, Pos2, Rect, Rounding, Stroke, Ui, Visuals,
-};
+use egui::{vec2, Color32, Context, FontId, Margin, Pos2, Rect, Rounding, Stroke, Ui, Visuals};
 
 // -----------------------------------------------------------------------------
 // PALETTE COLORI APPLE CUPERTINO PRO DARK
@@ -139,20 +137,28 @@ pub fn draw_status_dot(ui: &mut Ui, center: Pos2, color: Color32, label: &str) {
 /// Disegna un badge a pillola arrotondata con colore semantico
 pub fn draw_pill_badge(ui: &mut Ui, text: &str, fill_color: Color32, text_color: Color32) -> Rect {
     let padding = vec2(8.0, 3.0);
-    let galley = ui.painter().layout_no_wrap(
-        text.to_string(),
-        FontId::proportional(11.0),
-        text_color,
+    let galley =
+        ui.painter()
+            .layout_no_wrap(text.to_string(), FontId::proportional(11.0), text_color);
+    let size = vec2(
+        galley.size().x + padding.x * 2.0,
+        galley.size().y + padding.y * 2.0,
     );
-    let size = vec2(galley.size().x + padding.x * 2.0, galley.size().y + padding.y * 2.0);
     let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
 
     ui.painter().rect_filled(rect, RADIUS_PILL, fill_color);
-    ui.painter().rect_stroke(rect, RADIUS_PILL, Stroke::new(1.0_f32, fill_color.gamma_multiply(1.2)));
+    ui.painter().rect_stroke(
+        rect,
+        RADIUS_PILL,
+        Stroke::new(1.0_f32, fill_color.gamma_multiply(1.2)),
+    );
 
     let text_pos = Pos2::new(rect.center().x, rect.center().y);
     ui.painter().galley(
-        Pos2::new(text_pos.x - galley.size().x / 2.0, text_pos.y - galley.size().y / 2.0),
+        Pos2::new(
+            text_pos.x - galley.size().x / 2.0,
+            text_pos.y - galley.size().y / 2.0,
+        ),
         galley,
         text_color,
     );

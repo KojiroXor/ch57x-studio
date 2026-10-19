@@ -85,7 +85,10 @@ impl WindowActor {
     }
 
     /// Executes a LaunchOrFocusAction with retry logic and returns a WindowActionResult.
-    pub fn execute(&self, action: &LaunchOrFocusAction) -> Result<WindowActionResult, PlatformError> {
+    pub fn execute(
+        &self,
+        action: &LaunchOrFocusAction,
+    ) -> Result<WindowActionResult, PlatformError> {
         let timeout = if action.timeout_ms > 0 {
             action.timeout_ms
         } else {
@@ -156,9 +159,7 @@ impl WindowActor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ch57x_domain::actions::{
-        FocusOutcome, ForegroundAppInfo, LaunchRecipe, WindowSelector,
-    };
+    use ch57x_domain::actions::{FocusOutcome, ForegroundAppInfo, LaunchRecipe, WindowSelector};
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicUsize, Ordering};
 

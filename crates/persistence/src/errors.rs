@@ -26,10 +26,7 @@ pub enum PersistenceError {
     Journal(String),
 
     #[error("Corrupted data at {path}: {message}")]
-    CorruptedData {
-        path: PathBuf,
-        message: String,
-    },
+    CorruptedData { path: PathBuf, message: String },
 
     #[error("Executable at {0} is untrusted or does not match verified hash")]
     UntrustedExecutable(PathBuf),

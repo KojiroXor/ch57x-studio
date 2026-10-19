@@ -9,9 +9,7 @@
 
 use ch57x_domain::actions::{HidAction, SlotBinding};
 use ch57x_domain::errors::DomainError;
-use ch57x_domain::hardware::{
-    COL_COUNT, LAYER_COUNT, ROW_COUNT, SLOTS_PER_LAYER,
-};
+use ch57x_domain::hardware::{COL_COUNT, LAYER_COUNT, ROW_COUNT, SLOTS_PER_LAYER};
 use ch57x_domain::profile::Profile;
 
 pub const DEFAULT_DISABLED_TOKEN: &str = "f24";
@@ -134,10 +132,11 @@ mod tests {
         let mut profile = Profile::default();
 
         // Slot 0: KeyboardChord ctrl-shift-c
-        profile.slots.get_mut(&0).unwrap().binding = SlotBinding::HidNative(HidAction::KeyboardChord {
-            modifiers: vec![HidMod::Ctrl, HidMod::Shift],
-            key: "c".into(),
-        });
+        profile.slots.get_mut(&0).unwrap().binding =
+            SlotBinding::HidNative(HidAction::KeyboardChord {
+                modifiers: vec![HidMod::Ctrl, HidMod::Shift],
+                key: "c".into(),
+            });
 
         // Slot 1: Media volumeup
         profile.slots.get_mut(&1).unwrap().binding =
@@ -148,8 +147,7 @@ mod tests {
             SlotBinding::HidNative(HidAction::MouseAction(MouseToken::Click));
 
         // Slot 3: HostActionRef
-        profile.slots.get_mut(&3).unwrap().binding =
-            SlotBinding::HostActionRef(ActionId::new_v4());
+        profile.slots.get_mut(&3).unwrap().binding = SlotBinding::HostActionRef(ActionId::new_v4());
 
         allocate_triggers(&mut profile).unwrap();
 

@@ -199,8 +199,14 @@ mod tests {
         assert_eq!(report.successful_placements, 1);
         assert!(!report.all_succeeded);
         assert_eq!(report.outcomes.len(), 2);
-        assert_eq!(report.outcomes[0].result.placement, PlacementOutcome::Applied);
-        assert_eq!(report.outcomes[1].result.placement, PlacementOutcome::Failed);
+        assert_eq!(
+            report.outcomes[0].result.placement,
+            PlacementOutcome::Applied
+        );
+        assert_eq!(
+            report.outcomes[1].result.placement,
+            PlacementOutcome::Failed
+        );
 
         // Test all succeeded
         let action_all_ok = RestoreWorkspaceAction {
@@ -208,7 +214,9 @@ mod tests {
             post_delay_ms: 5,
         };
 
-        let report_ok = actor.execute(&action_all_ok).expect("Should execute workspace");
+        let report_ok = actor
+            .execute(&action_all_ok)
+            .expect("Should execute workspace");
         assert_eq!(report_ok.total_targets, 2);
         assert_eq!(report_ok.successful_placements, 2);
         assert!(report_ok.all_succeeded);

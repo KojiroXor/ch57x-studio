@@ -189,10 +189,7 @@ impl DeploymentJournal {
     }
 
     /// Marks deployment as successful and clears active deployment id.
-    pub fn step_to_success(
-        &mut self,
-        storage_dir: Option<&Path>,
-    ) -> Result<(), PersistenceError> {
+    pub fn step_to_success(&mut self, storage_dir: Option<&Path>) -> Result<(), PersistenceError> {
         self.active_deployment_id = None;
         self.transition_to(DeploymentState::Success, storage_dir)
     }
@@ -221,33 +218,45 @@ mod tests {
     #[test]
     fn test_journal_full_hardware_deployment_lifecycle() {
         let temp_dir = std::env::temp_dir().join(format!("ch57x_journal_hw_{}", Uuid::new_v4()));
-        let mut journal = DeploymentJournal::load_or_recover(&temp_dir).expect("Failed to initialize journal");
+        let mut journal =
+            DeploymentJournal::load_or_recover(&temp_dir).expect("Failed to initialize journal");
         assert_eq!(journal.state, DeploymentState::Idle);
 
         // 1. Start deployment
-        let dep_id = journal.start_deployment(Some(&temp_dir)).expect("Failed to start");
+        let dep_id = journal
+            .start_deployment(Some(&temp_dir))
+            .expect("Failed to start");
         assert_eq!(journal.state, DeploymentState::ValidatingYaml);
         assert_eq!(journal.active_deployment_id, Some(dep_id));
 
         // 2. Hardware flash
-        journal.step_to_hardware_flash(Some(&temp_dir)).expect("Failed step flash");
+        journal
+            .step_to_hardware_flash(Some(&temp_dir))
+            .expect("Failed step flash");
         assert_eq!(journal.state, DeploymentState::WritingHardwareFlash);
 
         // 3. Activating host runtime with yaml hash
         let hash = "a1b2c3d4e5f6".to_string();
-        journal.step_to_activating_runtime(Some(hash.clone()), Some(&temp_dir)).expect("Failed step runtime");
+        journal
+            .step_to_activating_runtime(Some(hash.clone()), Some(&temp_dir))
+            .expect("Failed step runtime");
         assert_eq!(journal.state, DeploymentState::ActivatingHostRuntime);
         assert_eq!(journal.last_uploaded_yaml_hash, Some(hash));
 
         // 4. Success
-        journal.step_to_success(Some(&temp_dir)).expect("Failed step success");
+        journal
+            .step_to_success(Some(&temp_dir))
+            .expect("Failed step success");
         assert_eq!(journal.state, DeploymentState::Success);
         assert_eq!(journal.active_deployment_id, None);
 
         // Reload from disk to verify persistence
         let reloaded = DeploymentJournal::load_or_recover(&temp_dir).expect("Failed reload");
         assert_eq!(reloaded.state, DeploymentState::Success);
-        assert_eq!(reloaded.last_uploaded_yaml_hash, Some("a1b2c3d4e5f6".into()));
+        assert_eq!(
+            reloaded.last_uploaded_yaml_hash,
+            Some("a1b2c3d4e5f6".into())
+        );
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
@@ -257,14 +266,20 @@ mod tests {
         let temp_dir = std::env::temp_dir().join(format!("ch57x_journal_host_{}", Uuid::new_v4()));
         let mut journal = DeploymentJournal::load_or_recover(&temp_dir).expect("Failed to init");
 
-        journal.start_deployment(Some(&temp_dir)).expect("Failed to start");
+        journal
+            .start_deployment(Some(&temp_dir))
+            .expect("Failed to start");
         assert_eq!(journal.state, DeploymentState::ValidatingYaml);
 
         // Host-only jumps directly to ActivatingHostRuntime without writing hardware flash
-        journal.step_to_activating_runtime(None, Some(&temp_dir)).expect("Failed host-only runtime");
+        journal
+            .step_to_activating_runtime(None, Some(&temp_dir))
+            .expect("Failed host-only runtime");
         assert_eq!(journal.state, DeploymentState::ActivatingHostRuntime);
 
-        journal.step_to_success(Some(&temp_dir)).expect("Failed success");
+        journal
+            .step_to_success(Some(&temp_dir))
+            .expect("Failed success");
         assert_eq!(journal.state, DeploymentState::Success);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
@@ -274,7 +289,9 @@ mod tests {
     fn test_invalid_state_transition_is_blocked() {
         let mut journal = DeploymentJournal::default();
         // Cannot jump directly from Idle to Success
-        let err = journal.transition_to(DeploymentState::Success, None).unwrap_err();
+        let err = journal
+            .transition_to(DeploymentState::Success, None)
+            .unwrap_err();
         match err {
             PersistenceError::InvalidStateTransition { from, to } => {
                 assert_eq!(from, DeploymentState::Idle);
@@ -289,8 +306,12 @@ mod tests {
         let temp_dir = std::env::temp_dir().join(format!("ch57x_journal_crash_{}", Uuid::new_v4()));
         let mut journal = DeploymentJournal::load_or_recover(&temp_dir).expect("Failed to init");
 
-        journal.start_deployment(Some(&temp_dir)).expect("Failed start");
-        journal.step_to_hardware_flash(Some(&temp_dir)).expect("Failed step flash");
+        journal
+            .start_deployment(Some(&temp_dir))
+            .expect("Failed start");
+        journal
+            .step_to_hardware_flash(Some(&temp_dir))
+            .expect("Failed step flash");
 
         // Simulate crash: process abruptly terminated while in WritingHardwareFlash
         // Next process launch loads the journal:

@@ -9,7 +9,10 @@ pub enum CapabilityStatus {
 
 impl CapabilityStatus {
     pub fn is_supported(&self) -> bool {
-        matches!(self, CapabilityStatus::FullySupported | CapabilityStatus::PartiallySupported(_))
+        matches!(
+            self,
+            CapabilityStatus::FullySupported | CapabilityStatus::PartiallySupported(_)
+        )
     }
 }
 
@@ -55,12 +58,22 @@ impl CapabilityMatrix {
     pub fn linux_wayland() -> Self {
         Self {
             platform_name: "Linux (Wayland)".into(),
-            window_placement: CapabilityStatus::Unsupported("Window placement is restricted by Wayland security protocol".into()),
-            window_picker: CapabilityStatus::Unsupported("Arbitrary window picking is restricted on Wayland".into()),
-            global_hotkeys: CapabilityStatus::PartiallySupported("Requires desktop portal or compositor global shortcut support".into()),
-            input_injection: CapabilityStatus::PartiallySupported("Requires uinput or wlr-protocols".into()),
+            window_placement: CapabilityStatus::Unsupported(
+                "Window placement is restricted by Wayland security protocol".into(),
+            ),
+            window_picker: CapabilityStatus::Unsupported(
+                "Arbitrary window picking is restricted on Wayland".into(),
+            ),
+            global_hotkeys: CapabilityStatus::PartiallySupported(
+                "Requires desktop portal or compositor global shortcut support".into(),
+            ),
+            input_injection: CapabilityStatus::PartiallySupported(
+                "Requires uinput or wlr-protocols".into(),
+            ),
             system_tray: CapabilityStatus::FullySupported,
-            hud_overlay: CapabilityStatus::PartiallySupported("Layer-shell support dependent".into()),
+            hud_overlay: CapabilityStatus::PartiallySupported(
+                "Layer-shell support dependent".into(),
+            ),
             usb_flashing: CapabilityStatus::FullySupported,
         }
     }
