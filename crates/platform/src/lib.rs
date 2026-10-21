@@ -16,6 +16,7 @@ pub use windows::WindowsPlatform as CurrentPlatform;
 #[cfg(target_os = "linux")]
 pub use linux::LinuxPlatform as CurrentPlatform;
 
+#[allow(clippy::default_constructed_unit_structs)]
 pub fn get_platform() -> CurrentPlatform {
     CurrentPlatform::default()
 }

@@ -13,6 +13,7 @@ use thiserror::Error;
 use std::os::windows::process::CommandExt;
 
 /// Flag Win32 per evitare la creazione della finestra console su Windows
+#[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[derive(Error, Debug)]
