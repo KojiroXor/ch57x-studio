@@ -12,6 +12,9 @@ pub trait PlatformBackend: Send + Sync {
     fn windows(&self) -> &dyn WindowManagerBackend;
     fn input(&self) -> &dyn InputInjectorBackend;
     fn autostart(&self) -> &dyn AutostartBackend;
+    fn adjust_brightness(&self, _delta: i32) -> Result<u32, PlatformError> {
+        Ok(50)
+    }
 }
 
 pub trait HotkeyBackend: Send + Sync {

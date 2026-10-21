@@ -219,6 +219,14 @@ pub struct UiState {
     pub active_view: ActiveView,
     /// Feedback visivo per slot recentemente cliccato (slot, timestamp)
     pub click_feedback: Option<(SlotId, Instant)>,
+    /// ID del template di layer in attesa di conferma sovrascrittura
+    pub pending_layer_template_confirm: Option<&'static str>,
+    /// Slot attualmente trascinato col mouse (Drag-and-Drop)
+    pub dragged_slot: Option<SlotId>,
+    /// Posizione corrente del puntatore durante il drag
+    pub drag_pointer_pos: Option<egui::Pos2>,
+    /// Slot bersaglio evidenziato sotto il cursore durante il drag
+    pub drag_target_slot: Option<SlotId>,
 }
 
 impl Default for UiState {
@@ -239,6 +247,10 @@ impl Default for UiState {
             doctor_cache: DoctorCache::default(),
             active_view: ActiveView::Editor,
             click_feedback: None,
+            pending_layer_template_confirm: None,
+            dragged_slot: None,
+            drag_pointer_pos: None,
+            drag_target_slot: None,
         }
     }
 }
@@ -261,6 +273,10 @@ impl UiState {
             doctor_cache: DoctorCache::default(),
             active_view: ActiveView::Editor,
             click_feedback: None,
+            pending_layer_template_confirm: None,
+            dragged_slot: None,
+            drag_pointer_pos: None,
+            drag_target_slot: None,
         }
     }
 
@@ -276,6 +292,20 @@ impl UiState {
                 });
             }
         }
+    }
+
+    /// Verifica se un layer ha almeno uno slot configurato (diverso da Disabled)
+    pub fn is_layer_configured(&self, layer: LayerIndex) -> bool {
+        for slot in SlotId::all_slots() {
+            if slot.layer == layer {
+                if let Some(cfg) = self.profile.slots.get(&slot.global_index()) {
+                    if !matches!(cfg.binding, SlotBinding::Disabled) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
     }
 
     /// Seleziona uno slot tramite SlotId
@@ -404,6 +434,7 @@ impl UiState {
                             ActionDefinition::ExecProcess(_) => "CMD",
                             ActionDefinition::ContextDispatch(_) => "CTX",
                             ActionDefinition::ShowHud { .. } => "HUD",
+                            ActionDefinition::AdjustBrightness { .. } => "LUM",
                         }
                     } else {
                         "OFF"
@@ -534,6 +565,10 @@ impl UiState {
                 });
                 self.assign_action_to_selected_slot(action);
             }
+            "AdjustBrightness" => {
+                let action = ActionDefinition::AdjustBrightness { delta: 5 };
+                self.assign_action_to_selected_slot(action);
+            }
             _ => {}
         }
     }
@@ -546,6 +581,45 @@ impl UiState {
             }
         }
         false
+    }
+
+    /// Scambia la configurazione tra due slot (funzionalità Drag-and-Drop)
+    pub fn swap_slots(&mut self, slot_a: SlotId, slot_b: SlotId) {
+        if slot_a == slot_b {
+            return;
+        }
+        let idx_a = slot_a.global_index();
+        let idx_b = slot_b.global_index();
+
+        let cfg_a = self.profile.slots.remove(&idx_a);
+        let cfg_b = self.profile.slots.remove(&idx_b);
+
+        match (cfg_a, cfg_b) {
+            (Some(mut a), Some(mut b)) => {
+                std::mem::swap(&mut a, &mut b);
+                self.profile.slots.insert(idx_a, a);
+                self.profile.slots.insert(idx_b, b);
+            }
+            (Some(a), None) => {
+                self.profile.slots.insert(idx_b, a);
+            }
+            (None, Some(b)) => {
+                self.profile.slots.insert(idx_a, b);
+            }
+            (None, None) => {}
+        }
+
+        let trig_a = self.profile.trigger_allocation.remove(&idx_a);
+        let trig_b = self.profile.trigger_allocation.remove(&idx_b);
+        if let Some(t) = trig_a {
+            self.profile.trigger_allocation.insert(idx_b, t);
+        }
+        if let Some(t) = trig_b {
+            self.profile.trigger_allocation.insert(idx_a, t);
+        }
+
+        self.mark_dirty();
+        self.selected_slot = Some(slot_b);
     }
 }
 
@@ -723,6 +797,9 @@ mod tests {
 
         state.set_selected_binding_type("ContextDispatch");
         assert_eq!(state.get_badge_for_slot(slot), "CTX");
+
+        state.set_selected_binding_type("AdjustBrightness");
+        assert_eq!(state.get_badge_for_slot(slot), "LUM");
 
         state.set_selected_binding_type("Disabled");
         assert_eq!(state.get_badge_for_slot(slot), "DIS");

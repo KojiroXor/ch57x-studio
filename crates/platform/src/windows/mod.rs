@@ -1,3 +1,4 @@
+pub mod brightness;
 pub mod hotkeys;
 pub mod input;
 pub mod monitors;
@@ -62,6 +63,10 @@ impl PlatformBackend for WindowsPlatform {
 
     fn autostart(&self) -> &dyn AutostartBackend {
         &self.autostart
+    }
+
+    fn adjust_brightness(&self, delta: i32) -> Result<u32, PlatformError> {
+        brightness::adjust_brightness(delta)
     }
 }
 

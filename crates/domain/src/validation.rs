@@ -232,6 +232,14 @@ fn validate_actions(profile: &Profile) -> Result<(), DomainError> {
                     )));
                 }
             }
+            ActionDefinition::AdjustBrightness { delta } => {
+                if *delta == 0 {
+                    return Err(DomainError::Validation(format!(
+                        "AdjustBrightness action {} delta must be non-zero",
+                        action_id
+                    )));
+                }
+            }
         }
     }
 

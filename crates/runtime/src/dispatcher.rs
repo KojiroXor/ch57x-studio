@@ -10,6 +10,7 @@ use ch57x_domain::actions::{
 use ch57x_domain::profile::Profile;
 use ch57x_domain::triggers::PhantomTrigger;
 use ch57x_platform::traits::{InputInjectorBackend, WindowManagerBackend};
+use ch57x_platform::PlatformBackend;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 
@@ -33,6 +34,9 @@ pub enum DispatchOutcome {
     },
     ShowHud {
         duration_ms: u64,
+    },
+    BrightnessAdjusted {
+        new_brightness: u32,
     },
     RecursionLimitExceeded,
     Error(String),
@@ -235,6 +239,14 @@ impl RuntimeDispatcher {
             ActionDefinition::ShowHud { duration_ms } => DispatchOutcome::ShowHud {
                 duration_ms: *duration_ms,
             },
+            ActionDefinition::AdjustBrightness { delta } => {
+                match ch57x_platform::get_platform().adjust_brightness(*delta) {
+                    Ok(level) => DispatchOutcome::BrightnessAdjusted {
+                        new_brightness: level,
+                    },
+                    Err(err) => DispatchOutcome::Error(err.to_string()),
+                }
+            }
         }
     }
 }

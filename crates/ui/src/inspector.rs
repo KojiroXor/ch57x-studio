@@ -16,7 +16,9 @@ use ch57x_domain::actions::{
 };
 use ch57x_domain::hardware::{ControlId, EncoderEvent, SlotId};
 use ch57x_platform::PlatformBackend;
-use egui::{vec2, Color32, ComboBox, FontId, ProgressBar, Rounding, Sense, Stroke, TextEdit, Ui};
+use egui::{
+    vec2, Color32, ComboBox, FontId, Margin, ProgressBar, Rounding, Sense, Stroke, TextEdit, Ui,
+};
 
 pub struct InspectorPanel;
 
@@ -50,7 +52,7 @@ impl InspectorPanel {
         let slot = match state.selected_slot {
             Some(s) => s,
             None => {
-                Self::show_empty_placeholder(ui);
+                Self::show_empty_placeholder(ui, state);
                 return;
             }
         };
@@ -74,16 +76,23 @@ impl InspectorPanel {
             liquid_glass_card(ui, Some("Test Rapido & Trigger"), |ui| {
                 Self::show_test_and_trigger_card(ui, slot, state, platform);
             });
+
+            ui.add_space(8.0);
+
+            // Card 4 — Template Layer Intero
+            liquid_glass_card(ui, Some("Template Intero Layer (18 Slot)"), |ui| {
+                Self::show_layer_templates_section(ui, state);
+            });
         });
     }
 
     /// Placeholder quando nessuno slot è selezionato
-    fn show_empty_placeholder(ui: &mut Ui) {
+    fn show_empty_placeholder(ui: &mut Ui, state: &mut UiState) {
         liquid_glass_card(ui, None, |ui| {
             ui.vertical_centered(|ui| {
-                ui.add_space(40.0);
+                ui.add_space(20.0);
                 draw_status_dot(ui, egui::pos2(ui.available_rect_before_wrap().center().x, ui.cursor().top() + 10.0), COLOR_TEXT_TERTIARY, "");
-                ui.add_space(16.0);
+                ui.add_space(14.0);
                 ui.label(
                     egui::RichText::new("Nessun Controllo Selezionato")
                         .font(FontId::proportional(15.0))
@@ -98,9 +107,140 @@ impl InspectorPanel {
                     .font(FontId::proportional(12.0))
                     .color(COLOR_TEXT_SECONDARY),
                 );
-                ui.add_space(40.0);
+                ui.add_space(20.0);
             });
+
+            ui.separator();
+            ui.add_space(10.0);
+
+            ui.label(
+                egui::RichText::new("TEMPLATE 1-CLICK PER INTERO LAYER")
+                    .font(FontId::proportional(11.5))
+                    .strong()
+                    .color(COLOR_APPLE_BLUE),
+            );
+            ui.add_space(6.0);
+            Self::show_layer_templates_section(ui, state);
         });
+    }
+
+    /// Sezione Template Intero Layer (con gestione conferma sovrascrittura)
+    fn show_layer_templates_section(ui: &mut Ui, state: &mut UiState) {
+        ui.label(
+            egui::RichText::new(format!(
+                "Configura tutti i 18 slot del Layer {} in un colpo solo:",
+                state.editing_layer.display_number()
+            ))
+            .font(FontId::proportional(11.0))
+            .color(COLOR_TEXT_SECONDARY),
+        );
+        ui.add_space(6.0);
+
+        for template in crate::presets::LAYER_TEMPLATES {
+            let is_pending = state.pending_layer_template_confirm == Some(template.id);
+
+            egui::Frame {
+                inner_margin: Margin::symmetric(10.0, 8.0),
+                rounding: Rounding::same(8.0),
+                fill: COLOR_SURFACE_INSET,
+                stroke: Stroke::new(
+                    1.0_f32,
+                    if is_pending {
+                        COLOR_APPLE_ORANGE
+                    } else {
+                        COLOR_BORDER_SUBTLE
+                    },
+                ),
+                ..Default::default()
+            }
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(template.title)
+                            .strong()
+                            .color(COLOR_TEXT_PRIMARY),
+                    );
+                });
+                ui.add_space(2.0);
+                ui.label(
+                    egui::RichText::new(template.description)
+                        .font(FontId::proportional(10.5))
+                        .color(COLOR_TEXT_TERTIARY),
+                );
+                ui.add_space(6.0);
+
+                if is_pending {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "⚠️ Il Layer {} contiene slot configurati. Vuoi sovrascrivere tutti i 18 slot con questo template?",
+                            state.editing_layer.display_number()
+                        ))
+                        .font(FontId::proportional(11.0))
+                        .color(COLOR_APPLE_ORANGE),
+                    );
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        let confirm_btn = egui::Button::new(
+                            egui::RichText::new("Conferma Sovrascrittura")
+                                .color(Color32::WHITE)
+                                .font(FontId::proportional(11.0))
+                                .strong(),
+                        )
+                        .fill(COLOR_APPLE_RED);
+
+                        if ui.add(confirm_btn).clicked() {
+                            (template.apply)(&mut state.profile, state.editing_layer);
+                            state.mark_dirty();
+                            state.pending_layer_template_confirm = None;
+                            state.set_status(
+                                format!(
+                                    "Template '{}' applicato con successo al Layer {}.",
+                                    template.title,
+                                    state.editing_layer.display_number()
+                                ),
+                                StatusLevel::Success,
+                            );
+                        }
+
+                        if ui
+                            .button(egui::RichText::new("Annulla").font(FontId::proportional(11.0)))
+                            .clicked()
+                        {
+                            state.pending_layer_template_confirm = None;
+                        }
+                    });
+                } else {
+                    let apply_btn = egui::Button::new(
+                        egui::RichText::new(format!(
+                            "Applica al Layer {}",
+                            state.editing_layer.display_number()
+                        ))
+                        .font(FontId::proportional(11.0))
+                        .color(COLOR_APPLE_BLUE),
+                    )
+                    .fill(COLOR_SURFACE_CARD)
+                    .stroke(Stroke::new(1.0_f32, COLOR_APPLE_BLUE));
+
+                    if ui.add(apply_btn).clicked() {
+                        if state.is_layer_configured(state.editing_layer) {
+                            state.pending_layer_template_confirm = Some(template.id);
+                        } else {
+                            (template.apply)(&mut state.profile, state.editing_layer);
+                            state.mark_dirty();
+                            state.set_status(
+                                format!(
+                                    "Template '{}' applicato con successo al Layer {}.",
+                                    template.title,
+                                    state.editing_layer.display_number()
+                                ),
+                                StatusLevel::Success,
+                            );
+                        }
+                    }
+                }
+            });
+            ui.add_space(6.0);
+        }
     }
 
     /// Card 1: Info Slot (Identificatore, Etichetta, Colore con griglia fissa a 120px)
@@ -240,6 +380,86 @@ impl InspectorPanel {
             (2, "Automazione Host"),
         ];
 
+        if let ControlId::Encoder { index, .. } = slot.control {
+            ui.label(
+                egui::RichText::new(format!(
+                    "PRESET 3-IN-1 PER ENCODER {} (CCW + PRESS + CW)",
+                    index + 1
+                ))
+                .font(FontId::proportional(11.0))
+                .strong()
+                .color(COLOR_APPLE_BLUE),
+            );
+            ui.add_space(4.0);
+
+            ui.horizontal_wrapped(|ui| {
+                for preset in crate::presets::ENCODER_PRESETS {
+                    let btn = egui::Button::new(
+                        egui::RichText::new(preset.title)
+                            .font(FontId::proportional(11.0))
+                            .color(COLOR_TEXT_PRIMARY),
+                    )
+                    .fill(COLOR_SURFACE_CARD)
+                    .stroke(Stroke::new(1.0_f32, COLOR_BORDER_SUBTLE));
+
+                    if ui.add(btn).on_hover_text(preset.description).clicked() {
+                        crate::presets::apply_encoder_preset(
+                            &mut state.profile,
+                            slot.layer,
+                            index,
+                            preset,
+                        );
+                        state.mark_dirty();
+                        state.set_status(
+                            format!(
+                                "Encoder {} configurato su preset '{}'.",
+                                index + 1,
+                                preset.title
+                            ),
+                            StatusLevel::Success,
+                        );
+                    }
+                }
+            });
+            ui.add_space(8.0);
+            ui.separator();
+            ui.add_space(8.0);
+        }
+
+        if let ControlId::Button { .. } = slot.control {
+            ui.label(
+                egui::RichText::new("PRESET RAPIDI PRODUTTIVITÀ")
+                    .font(FontId::proportional(11.0))
+                    .strong()
+                    .color(COLOR_APPLE_BLUE),
+            );
+            ui.add_space(4.0);
+
+            ui.horizontal_wrapped(|ui| {
+                for preset in crate::presets::KEY_PRESETS {
+                    let chip = egui::Button::new(
+                        egui::RichText::new(preset.title)
+                            .font(FontId::proportional(10.5))
+                            .color(COLOR_TEXT_PRIMARY),
+                    )
+                    .fill(COLOR_SURFACE_CARD)
+                    .stroke(Stroke::new(1.0_f32, COLOR_BORDER_SUBTLE));
+
+                    if ui.add(chip).on_hover_text(preset.description).clicked() {
+                        (preset.apply)(&mut state.profile, slot.global_index());
+                        state.mark_dirty();
+                        state.set_status(
+                            format!("Tasto configurato con preset '{}'.", preset.title),
+                            StatusLevel::Success,
+                        );
+                    }
+                }
+            });
+            ui.add_space(8.0);
+            ui.separator();
+            ui.add_space(8.0);
+        }
+
         if liquid_segmented_control(ui, "binding_category_control", &mut category, &options) {
             match category {
                 0 => state.set_selected_binding_type("Disabled"),
@@ -266,6 +486,7 @@ impl InspectorPanel {
                         ("MacroSequence", "Macro"),
                         ("ExecProcess", "Processo"),
                         ("ContextDispatch", "Contestuale"),
+                        ("AdjustBrightness", "Luminosità"),
                     ];
 
                     let current_type_name = match current_badge {
@@ -274,6 +495,7 @@ impl InspectorPanel {
                         "MAC" => "MacroSequence",
                         "CMD" => "ExecProcess",
                         "CTX" => "ContextDispatch",
+                        "LUM" => "AdjustBrightness",
                         _ => "LaunchOrFocus",
                     };
 
@@ -410,6 +632,66 @@ impl InspectorPanel {
             "CTX" => {
                 Self::show_context_dispatch_editor(ui, slot, state);
             }
+            "LUM" => {
+                let mut marked_dirty = false;
+                if let Some(ActionDefinition::AdjustBrightness { delta }) =
+                    state.get_action_for_slot_mut(slot)
+                {
+                    ui.label(
+                        egui::RichText::new("Regolazione Luminosità Monitor (Windows WMI/Gamma):")
+                            .font(FontId::proportional(11.5))
+                            .color(COLOR_TEXT_PRIMARY),
+                    );
+                    ui.add_space(4.0);
+
+                    egui::Grid::new("lum_action_grid")
+                        .num_columns(2)
+                        .min_col_width(120.0)
+                        .spacing(vec2(12.0, 6.0))
+                        .show(ui, |ui| {
+                            ui.label(
+                                egui::RichText::new("Variazione (Delta):")
+                                    .color(COLOR_TEXT_SECONDARY),
+                            );
+                            ui.horizontal(|ui| {
+                                let mut val = *delta;
+                                if ui
+                                    .add(
+                                        egui::DragValue::new(&mut val)
+                                            .speed(1)
+                                            .range(-50..=50)
+                                            .suffix("%"),
+                                    )
+                                    .changed()
+                                {
+                                    *delta = val;
+                                    marked_dirty = true;
+                                }
+                                if ui.button("+5%").clicked() {
+                                    *delta = 5;
+                                    marked_dirty = true;
+                                }
+                                if ui.button("-5%").clicked() {
+                                    *delta = -5;
+                                    marked_dirty = true;
+                                }
+                            });
+                            ui.end_row();
+                        });
+
+                    ui.add_space(4.0);
+                    ui.label(
+                        egui::RichText::new(
+                            "Modifica la luminosità dello schermo ad ogni scatto dell'encoder o pressione del tasto.",
+                        )
+                        .font(FontId::proportional(10.5))
+                        .color(COLOR_TEXT_TERTIARY),
+                    );
+                }
+                if marked_dirty {
+                    state.mark_dirty();
+                }
+            }
             _ => {
                 ui.label("Azione personalizzata o non gestita.");
             }
@@ -505,6 +787,14 @@ impl InspectorPanel {
                         (MediaToken::NextSong, "Traccia Successiva"),
                         (MediaToken::PrevSong, "Traccia Precedente"),
                         (MediaToken::Stop, "Stop Riproduzione"),
+                        (
+                            MediaToken::BrightnessUp,
+                            "Aumenta Luminosità (Brightness Up)",
+                        ),
+                        (
+                            MediaToken::BrightnessDown,
+                            "Riduci Luminosità (Brightness Down)",
+                        ),
                     ];
 
                     ui.label(egui::RichText::new("Comando Media:").color(COLOR_TEXT_SECONDARY));
@@ -865,6 +1155,29 @@ impl InspectorPanel {
                     StatusLevel::Info,
                 );
             }
+            Some(ActionDefinition::AdjustBrightness { delta }) => {
+                if let Some(p) = platform {
+                    match p.adjust_brightness(delta) {
+                        Ok(new_val) => {
+                            state.set_status(
+                                format!("Luminosità impostata al {}%", new_val),
+                                StatusLevel::Success,
+                            );
+                        }
+                        Err(e) => {
+                            state.set_status(
+                                format!("Errore regolazione luminosità: {}", e),
+                                StatusLevel::Error,
+                            );
+                        }
+                    }
+                } else {
+                    state.set_status(
+                        "Piattaforma non inizializzata per il test.",
+                        StatusLevel::Warning,
+                    );
+                }
+            }
             None => {
                 let badge = state.get_badge_for_slot(slot);
                 if badge == "HID" {
@@ -1051,6 +1364,52 @@ impl InspectorPanel {
         action: &mut ExecProcessAction,
         marked_dirty: &mut bool,
     ) {
+        ui.horizontal_wrapped(|ui| {
+            let preset_cmd_btn = egui::Button::new(
+                egui::RichText::new("Preset: agy (cmd.exe)")
+                    .color(COLOR_APPLE_BLUE)
+                    .font(FontId::proportional(11.0)),
+            )
+            .fill(COLOR_SURFACE_CARD)
+            .stroke(Stroke::new(1.0_f32, COLOR_APPLE_BLUE));
+
+            if ui
+                .add(preset_cmd_btn)
+                .on_hover_text("Configura comando inline salvato nel profilo: apre agy in prompt classico (cmd.exe /k agy).")
+                .clicked()
+            {
+                action.program = std::path::PathBuf::from("cmd.exe");
+                action.args = vec![
+                    "/c".into(),
+                    "start".into(),
+                    "cmd.exe".into(),
+                    "/k".into(),
+                    "agy".into(),
+                ];
+                *marked_dirty = true;
+            }
+
+            let preset_wt_btn = egui::Button::new(
+                egui::RichText::new("Preset: agy (wt.exe)")
+                    .color(COLOR_APPLE_BLUE)
+                    .font(FontId::proportional(11.0)),
+            )
+            .fill(COLOR_SURFACE_CARD)
+            .stroke(Stroke::new(1.0_f32, COLOR_APPLE_BLUE));
+
+            if ui
+                .add(preset_wt_btn)
+                .on_hover_text("Configura comando inline salvato nel profilo: apre agy in Windows Terminal moderno (wt.exe -d . agy).")
+                .clicked()
+            {
+                action.program = std::path::PathBuf::from("wt.exe");
+                action.args = vec!["-d".into(), ".".into(), "agy".into()];
+                *marked_dirty = true;
+            }
+        });
+
+        ui.add_space(6.0);
+
         egui::Grid::new("exec_proc_grid")
             .num_columns(2)
             .min_col_width(120.0)
@@ -1063,6 +1422,28 @@ impl InspectorPanel {
                     .changed()
                 {
                     action.program = std::path::PathBuf::from(prog);
+                    *marked_dirty = true;
+                }
+                ui.end_row();
+
+                ui.label(egui::RichText::new("Argomenti:").color(COLOR_TEXT_SECONDARY));
+                let mut args_str = action.args.join(" ");
+                if ui
+                    .add(TextEdit::singleline(&mut args_str).desired_width(190.0))
+                    .changed()
+                {
+                    action.args = if args_str.trim().is_empty() {
+                        Vec::new()
+                    } else if args_str.contains("-EncodedCommand ") {
+                        let parts: Vec<&str> = args_str.splitn(2, "-EncodedCommand ").collect();
+                        let mut v: Vec<String> =
+                            parts[0].split_whitespace().map(String::from).collect();
+                        v.push("-EncodedCommand".to_string());
+                        v.push(parts[1].trim().to_string());
+                        v
+                    } else {
+                        args_str.split_whitespace().map(String::from).collect()
+                    };
                     *marked_dirty = true;
                 }
                 ui.end_row();

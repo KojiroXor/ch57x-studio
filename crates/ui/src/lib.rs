@@ -1,23 +1,30 @@
-//! UI crate: Layout Master-Detail simmetrico in stile Apple Liquid Glass
+//! VortexDeck Studio UI Root Module
+//! Usa `SidePanel::right` nativo per l'Inspector + `CentralPanel` verticale per il Macropad:
+//! garantisce zero clipping, zero testo verticale e proporzioni impeccabili su qualsiasi risoluzione.
 
 pub mod doctor_panel;
 pub mod hud_window;
 pub mod inspector;
 pub mod liquid_glass;
 pub mod pad_canvas;
+pub mod presets;
 pub mod state;
 pub mod theme;
 
 pub use doctor_panel::DoctorPanel;
 pub use hud_window::HudWindow;
 pub use inspector::InspectorPanel;
-pub use liquid_glass::*;
+pub use liquid_glass::{liquid_glass_card, paint_deep_space_canvas, paint_specular_rim_light};
 pub use pad_canvas::PadCanvas;
+pub use presets::{apply_encoder_preset, ENCODER_PRESETS, KEY_PRESETS, LAYER_TEMPLATES};
 pub use state::UiState;
-pub use theme::*;
+pub use theme::{apply_cupertino_theme, draw_pill_badge, draw_status_dot};
 
+use ch57x_domain::hardware::LayerIndex;
 use ch57x_platform::PlatformBackend;
-use egui::{vec2, Align, Color32, FontId, Layout, Margin, Rounding, Stroke, Ui};
+use egui::{vec2, Align, Color32, FontId, Layout, Margin, Rounding, ScrollArea, Stroke, Ui};
+use state::ActiveView;
+use theme::*;
 
 pub struct StudioUi {
     pub canvas: PadCanvas,
@@ -42,196 +49,175 @@ impl StudioUi {
         }
     }
 
+    /// Punto di ingresso principale compatibile con `CentralPanel`
     pub fn show(
         &mut self,
         ui: &mut Ui,
         state: &mut UiState,
         platform: Option<&dyn PlatformBackend>,
     ) {
-        // 1. Dipingi lo sfondo atmosferico continuo Deep Space (senza cerchi bersaglio!)
-        let bg_rect = ui.max_rect().expand(24.0);
+        let bg_rect = ui.max_rect().expand(20.0);
         paint_deep_space_canvas(ui.painter(), bg_rect);
 
         match state.active_view {
-            state::ActiveView::Editor => {
-                self.show_editor_workspace(ui, state, platform);
+            ActiveView::Editor => {
+                self.show_editor_split(ui, state, platform);
             }
-            state::ActiveView::Doctor => {
-                egui::ScrollArea::vertical()
+            ActiveView::Doctor => {
+                ScrollArea::vertical()
+                    .id_salt("doctor_main_scroll")
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
+                        ui.set_max_width(980.0);
                         self.doctor.show(ui, state, platform);
                     });
             }
-            state::ActiveView::Hud => {
-                // Centra la preview dell'HUD dentro una vera Glass Card elegante
-                ui.vertical_centered(|ui| {
-                    ui.add_space(28.0);
-                    egui::Frame {
-                        inner_margin: Margin::same(28.0),
-                        rounding: RADIUS_CARD,
-                        fill: COLOR_SURFACE_CARD,
-                        stroke: Stroke::new(1.0_f32, COLOR_BORDER_STRONG),
-                        shadow: egui::epaint::Shadow {
-                            blur: 32.0,
-                            offset: vec2(0.0, 12.0),
-                            color: Color32::from_black_alpha(140),
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    }
+            ActiveView::Hud => {
+                ScrollArea::vertical()
+                    .id_salt("hud_main_scroll")
+                    .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        ui.set_max_width(780.0);
-                        self.hud.show_content(ui, state);
+                        ui.vertical_centered(|ui| {
+                            ui.add_space(20.0);
+                            ui.allocate_ui(
+                                vec2(760.0_f32.min(ui.available_width()), 360.0),
+                                |ui| {
+                                    liquid_glass_card(
+                                        ui,
+                                        Some("Anteprima On-Screen Display (OSD)"),
+                                        |ui| {
+                                            self.hud.show_content(ui, state);
+                                        },
+                                    );
+                                },
+                            );
+                        });
                     });
-                });
             }
         }
     }
 
-    fn show_editor_workspace(
+    fn show_editor_split(
         &mut self,
         ui: &mut Ui,
         state: &mut UiState,
         platform: Option<&dyn PlatformBackend>,
     ) {
-        let total_rect = ui.available_rect_before_wrap();
-        let right_width = 430.0_f32.min(total_rect.width() * 0.42).max(350.0);
-        let gap = 16.0;
-        let left_width = (total_rect.width() - right_width - gap).max(520.0);
-        let full_height = total_rect.height();
+        let ctx = ui.ctx().clone();
 
-        ui.horizontal_top(|ui| {
-            ui.spacing_mut().item_spacing = vec2(gap, 0.0);
-
-            // -----------------------------------------------------------------
-            // COLONNA SINISTRA (Stage Hardware Macropad a tutta altezza)
-            // -----------------------------------------------------------------
-            let left_frame = egui::Frame {
-                inner_margin: Margin::same(22.0),
-                rounding: RADIUS_CARD,
-                fill: COLOR_SURFACE_CARD,
-                stroke: Stroke::new(1.0_f32, COLOR_BORDER_SUBTLE),
-                shadow: egui::epaint::Shadow {
-                    blur: 28.0,
-                    offset: vec2(0.0, 10.0),
-                    color: Color32::from_black_alpha(120),
-                    ..Default::default()
-                },
+        // 1. PANNELLO DESTRO FISSO (Inspector - 410px, sempre visibile e mai tagliato fuori schermo)
+        egui::SidePanel::right("apple_inspector_sidepanel")
+            .resizable(true)
+            .default_width(410.0)
+            .width_range(360.0..=500.0)
+            .frame(egui::Frame {
+                inner_margin: Margin::symmetric(14.0, 6.0),
+                fill: Color32::TRANSPARENT,
+                stroke: Stroke::NONE,
                 ..Default::default()
-            };
-
-            let left_resp = left_frame.show(ui, |ui| {
-                ui.set_width((left_width - 44.0).max(400.0));
-                ui.set_min_height((full_height - 46.0).max(440.0));
-
-                // Header della Card Sinistra
-                ui.horizontal(|ui| {
-                    ui.vertical(|ui| {
-                        ui.label(
-                            egui::RichText::new("CH57x Dual-Encoder Macropad")
-                                .font(FontId::proportional(17.0))
-                                .strong()
-                                .color(COLOR_TEXT_PRIMARY),
-                        );
-                        ui.label(
-                            egui::RichText::new("Matrice 4x3 Switch Meccanici  -  2 Encoder Rotativi CNC  -  3 Layer (54 Slot)")
-                                .font(FontId::proportional(12.0))
-                                .color(COLOR_TEXT_SECONDARY),
-                        );
-                    });
-
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        let layer_badge = format!("Layer Attivo: L{}", state.editing_layer.0 + 1);
-                        draw_pill_badge(ui, &layer_badge, Color32::TRANSPARENT, COLOR_APPLE_BLUE);
-                    });
+            })
+            .show_inside(ui, |ui| {
+                liquid_glass_card(ui, None, |ui| {
+                    ScrollArea::vertical()
+                        .id_salt("inspector_vertical_scroll")
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            self.inspector.show(ui, state, platform);
+                        });
                 });
+            });
 
-                ui.add_space(10.0);
-                ui.separator();
-                ui.add_space(12.0);
-
-                // Barra Legenda Colori in una capsula di vetro incassata
-                egui::Frame {
-                    inner_margin: Margin::symmetric(14.0, 8.0),
-                    rounding: Rounding::same(10.0),
-                    fill: COLOR_SURFACE_INSET,
-                    stroke: Stroke::new(1.0_f32, COLOR_BORDER_SUBTLE),
-                    ..Default::default()
-                }
-                .show(ui, |ui| {
-                    ui.horizontal_wrapped(|ui| {
-                        ui.spacing_mut().item_spacing = vec2(16.0, 6.0);
-                        ui.label(
-                            egui::RichText::new("LEGENDA:")
-                                .font(FontId::proportional(10.5))
-                                .strong()
-                                .color(COLOR_TEXT_TERTIARY),
-                        );
-                        for (code, desc) in [
-                            ("HID", "HID Nativo"),
-                            ("WIN", "WIN Finestra"),
-                            ("WSP", "WSP Workspace"),
-                            ("MAC", "MAC Macro"),
-                            ("CMD", "CMD Processo"),
-                            ("CTX", "CTX Contesto"),
-                        ] {
-                            let col = pad_canvas::badge_color(code);
-                            let (dot_rect, _) =
-                                ui.allocate_exact_size(vec2(8.0, 14.0), egui::Sense::hover());
-                            ui.painter().circle_filled(dot_rect.center(), 3.5, col);
+        // 2. AREA CENTRALE SINISTRA (Stage Hardware Macropad - Verticale garantito)
+        egui::CentralPanel::default()
+            .frame(egui::Frame {
+                inner_margin: Margin::same(6.0),
+                fill: Color32::TRANSPARENT,
+                ..Default::default()
+            })
+            .show_inside(ui, |ui| {
+                let _ = ctx;
+                liquid_glass_card(ui, None, |ui| {
+                    // Riga 1: Intestazione Hardware + Selettore Layer [ Layer 1 | Layer 2 | Layer 3 ]
+                    ui.horizontal(|ui| {
+                        ui.vertical(|ui| {
                             ui.label(
-                                egui::RichText::new(desc)
+                                egui::RichText::new("CH57x Dual-Encoder Macropad")
+                                    .font(FontId::proportional(16.0))
+                                    .strong()
+                                    .color(COLOR_TEXT_PRIMARY),
+                            );
+                            ui.label(
+                                egui::RichText::new("12 Tasti Meccanici (4x3)  •  3 LED Stato  •  2 Encoder CNC (54 Slot)")
                                     .font(FontId::proportional(11.5))
                                     .color(COLOR_TEXT_SECONDARY),
                             );
-                        }
+                        });
+
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            let mut cur_layer = state.editing_layer.0;
+                            let layer_opts = [
+                                (0u8, "Layer 1"),
+                                (1u8, "Layer 2"),
+                                (2u8, "Layer 3"),
+                            ];
+                            if segmented_control(ui, &mut cur_layer, &layer_opts) {
+                                state.set_editing_layer(LayerIndex(cur_layer));
+                            }
+                        });
                     });
-                });
 
-                // Centra verticalmente e orizzontalmente il Macropad nello spazio rimanente
-                let rem_h = ui.available_height();
-                let pad_top_space = ((rem_h - self.canvas.desired_size.y) * 0.5).max(12.0);
-                ui.add_space(pad_top_space);
+                    ui.add_space(8.0);
+                    ui.separator();
+                    ui.add_space(10.0);
 
-                ui.horizontal(|ui| {
-                    let rem_w = ui.available_width();
-                    let pad_left_space = ((rem_w - self.canvas.desired_size.x) * 0.5).max(0.0);
-                    ui.add_space(pad_left_space);
-                    self.canvas.show(ui, state);
-                });
-            });
-            paint_specular_rim_light(ui.painter(), left_resp.response.rect, RADIUS_CARD);
-
-            // -----------------------------------------------------------------
-            // COLONNA DESTRA (Inspector Laterale a tutta altezza)
-            // -----------------------------------------------------------------
-            let right_frame = egui::Frame {
-                inner_margin: Margin::same(20.0),
-                rounding: RADIUS_CARD,
-                fill: COLOR_SURFACE_CARD,
-                stroke: Stroke::new(1.0_f32, COLOR_BORDER_SUBTLE),
-                shadow: egui::epaint::Shadow {
-                    blur: 28.0,
-                    offset: vec2(0.0, 10.0),
-                    color: Color32::from_black_alpha(120),
-                    ..Default::default()
-                },
-                ..Default::default()
-            };
-
-            let right_resp = right_frame.show(ui, |ui| {
-                ui.set_width((right_width - 40.0).max(300.0));
-                ui.set_min_height((full_height - 46.0).max(440.0));
-
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false, false])
+                    // Riga 2: Legenda Orizzontale in Capsula (Larghezza esplicita = MAI più testo verticale!)
+                    egui::Frame {
+                        inner_margin: Margin::symmetric(12.0, 7.0),
+                        rounding: Rounding::same(9.0),
+                        fill: COLOR_SURFACE_INSET,
+                        stroke: Stroke::new(1.0_f32, COLOR_BORDER_SUBTLE),
+                        ..Default::default()
+                    }
                     .show(ui, |ui| {
-                        self.inspector.show(ui, state, platform);
+                        ui.set_width(ui.available_width());
+                        ui.horizontal_wrapped(|ui| {
+                            ui.spacing_mut().item_spacing = vec2(14.0, 4.0);
+                            ui.label(
+                                egui::RichText::new("LEGENDA:")
+                                    .font(FontId::proportional(10.0))
+                                    .strong()
+                                    .color(COLOR_TEXT_TERTIARY),
+                            );
+                            for (code, desc) in [
+                                ("HID", "HID Nativo"),
+                                ("WIN", "Finestra"),
+                                ("WSP", "Workspace"),
+                                ("MAC", "Macro"),
+                                ("CMD", "Processo"),
+                                ("CTX", "Contesto"),
+                            ] {
+                                let col = pad_canvas::badge_color(code);
+                                let (dot_r, _) = ui.allocate_exact_size(vec2(8.0, 12.0), egui::Sense::hover());
+                                ui.painter().circle_filled(dot_r.center(), 3.5, col);
+                                ui.label(
+                                    egui::RichText::new(desc)
+                                        .font(FontId::proportional(11.0))
+                                        .color(COLOR_TEXT_SECONDARY),
+                                );
+                            }
+                        });
                     });
+
+                    ui.add_space(16.0);
+
+                    // Riga 3: Il Macropad centrato orizzontalmente
+                    ui.vertical_centered(|ui| {
+                        self.canvas.show(ui, state);
+                    });
+
+                    ui.add_space(8.0);
+                });
             });
-            paint_specular_rim_light(ui.painter(), right_resp.response.rect, RADIUS_CARD);
-        });
     }
 }
 

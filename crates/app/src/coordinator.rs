@@ -39,6 +39,7 @@ pub struct HardwareFlashPreview {
     pub current_hash: String,
     #[allow(dead_code)]
     pub last_hash: Option<String>,
+    #[allow(dead_code)]
     pub requires_hardware_flash: bool,
     pub modified_slots_count: usize,
 }

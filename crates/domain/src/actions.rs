@@ -60,6 +60,8 @@ pub enum MediaToken {
     NextSong,
     PrevSong,
     Stop,
+    BrightnessUp,
+    BrightnessDown,
 }
 
 impl MediaToken {
@@ -72,6 +74,8 @@ impl MediaToken {
             MediaToken::NextSong => "next",
             MediaToken::PrevSong => "prev",
             MediaToken::Stop => "stop",
+            MediaToken::BrightnessUp => "macbrightnessup",
+            MediaToken::BrightnessDown => "macbrightnessdown",
         }
     }
 }
@@ -229,6 +233,7 @@ pub enum ActionDefinition {
     ExecProcess(ExecProcessAction),
     ContextDispatch(ContextDispatchAction),
     ShowHud { duration_ms: u64 },
+    AdjustBrightness { delta: i32 },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

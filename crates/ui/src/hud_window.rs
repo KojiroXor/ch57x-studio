@@ -1,17 +1,13 @@
-//! HUD OSD compact layout window in Cupertino Pro Dark style
-//!
-//! Visualizza la mappa completa dei 12 tasti e dei 2 encoder a schermo
-//! con uno stile visivo traslucido da On-Screen Display.
+//! On-Screen Display (HUD OSD) Cheat-Sheet Flottante in stile Apple Liquid Glass
 
 use crate::pad_canvas::badge_color;
 use crate::state::UiState;
 use crate::theme::*;
-use ch57x_domain::hardware::{ControlId, EncoderEvent, LayerIndex, SlotId, COL_COUNT, ROW_COUNT};
-use egui::{pos2, vec2, Align2, Color32, Context, FontId, Rounding, Stroke, Ui, Vec2, Window};
+use ch57x_domain::hardware::{ControlId, EncoderEvent, LayerIndex, SlotId};
+use egui::{pos2, vec2, Align2, Context, FontId, Margin, Rounding, Sense, Stroke, Ui};
 
 pub struct HudWindow {
     pub is_visible: bool,
-    pub compact_mode: bool,
 }
 
 impl Default for HudWindow {
@@ -22,264 +18,167 @@ impl Default for HudWindow {
 
 impl HudWindow {
     pub fn new() -> Self {
-        Self {
-            is_visible: false,
-            compact_mode: false,
-        }
+        Self { is_visible: false }
     }
 
-    /// Disegna la finestra HUD flottante OSD se visibile
     pub fn show(&mut self, ctx: &Context, state: &mut UiState) {
         if !self.is_visible {
             return;
         }
-
-        let mut open = self.is_visible;
-        Window::new("VortexDeck HUD OSD")
-            .open(&mut open)
-            .resizable(false)
-            .collapsible(false)
+        egui::Window::new("VortexDeck OSD")
+            .anchor(Align2::CENTER_BOTTOM, vec2(0.0, -48.0))
             .title_bar(false)
-            .anchor(Align2::CENTER_TOP, vec2(0.0, 40.0))
+            .collapsible(false)
+            .resizable(false)
             .frame(egui::Frame {
-                inner_margin: egui::Margin::same(14.0),
-                rounding: Rounding::same(16.0),
-                fill: Color32::from_rgba_unmultiplied(28, 28, 30, 235),
-                stroke: Stroke::new(1.0_f32, COLOR_BORDER_SUBTLE),
+                inner_margin: Margin::same(18.0),
+                rounding: RADIUS_CARD,
+                fill: rgba(16, 20, 30, 238),
+                stroke: Stroke::new(1.0_f32, COLOR_BORDER_STRONG),
                 ..Default::default()
             })
             .show(ctx, |ui| {
                 self.show_content(ui, state);
             });
-
-        self.is_visible = open;
     }
 
-    /// Disegna il contenuto interno dell'HUD OSD (usabile anche embedded)
-    pub fn show_content(&self, ui: &mut Ui, state: &mut UiState) {
+    pub fn show_content(&mut self, ui: &mut Ui, state: &mut UiState) {
         ui.vertical(|ui| {
-            // Header OSD stile Cupertino
+            // Header OSD
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new("VORTEXDECK OSD")
                         .font(FontId::proportional(12.0))
-                        .color(COLOR_TEXT_SECONDARY)
-                        .strong(),
+                        .strong()
+                        .color(COLOR_TEXT_SECONDARY),
                 );
-
-                ui.add_space(10.0);
-
-                // Layer indicator pills (L1, L2, L3)
-                for l in 0..3u8 {
-                    let is_active = state.editing_layer.0 == l;
-                    let text = format!("Layer {}", l + 1);
-                    let col = if is_active {
-                        Color32::WHITE
-                    } else {
-                        COLOR_TEXT_SECONDARY
-                    };
-
-                    let btn = egui::Button::new(egui::RichText::new(text).color(col).strong())
-                        .fill(if is_active {
-                            COLOR_APPLE_BLUE
-                        } else {
-                            COLOR_CONTROL_INACTIVE
-                        })
-                        .rounding(Rounding::same(6.0));
-
-                    if ui.add(btn).clicked() {
-                        state.set_editing_layer(LayerIndex(l));
-                    }
+                ui.add_space(12.0);
+                let mut cur = state.editing_layer.0;
+                let opts = [(0u8, "Layer 1"), (1u8, "Layer 2"), (2u8, "Layer 3")];
+                if segmented_control(ui, &mut cur, &opts) {
+                    state.set_editing_layer(LayerIndex(cur));
                 }
             });
 
             ui.add_space(8.0);
             ui.separator();
-            ui.add_space(8.0);
+            ui.add_space(10.0);
 
-            // Corpo principale: Tasti a sinistra, Encoders a destra
-            ui.horizontal(|ui| {
-                // Griglia 12 Tasti 4x3
+            ui.horizontal_top(|ui| {
+                // Griglia 4x3 Tasti
                 ui.vertical(|ui| {
-                    let key_size = vec2(64.0, 48.0);
-
-                    for r in 0..ROW_COUNT as u8 {
+                    for r in 0..3u8 {
                         ui.horizontal(|ui| {
-                            for c in 0..COL_COUNT as u8 {
+                            for c in 0..4u8 {
                                 let slot = SlotId {
                                     layer: state.editing_layer,
                                     control: ControlId::Button { row: r, col: c },
                                 };
-                                Self::draw_hud_key(ui, key_size, slot, state);
+                                Self::draw_osd_cell(ui, slot, vec2(74.0, 50.0), None, state);
                             }
                         });
                     }
                 });
 
-                ui.add_space(12.0);
+                ui.add_space(16.0);
                 ui.separator();
-                ui.add_space(12.0);
+                ui.add_space(16.0);
 
-                // Sezione Encoders
+                // 2 Encoder Rotativi
                 ui.vertical(|ui| {
                     ui.label(
                         egui::RichText::new("ENCODERS")
                             .font(FontId::proportional(10.5))
-                            .color(COLOR_TEXT_SECONDARY)
-                            .strong(),
+                            .strong()
+                            .color(COLOR_TEXT_TERTIARY),
                     );
-                    ui.add_space(4.0);
-
-                    for enc_idx in 0..2u8 {
-                        let enc_title = if enc_idx == 0 {
-                            "Encoder 1 (Top)"
-                        } else {
-                            "Encoder 2 (Bot)"
-                        };
+                    for (idx, title) in [
+                        (0u8, "Encoder 1 (Superiore)"),
+                        (1u8, "Encoder 2 (Inferiore)"),
+                    ] {
+                        ui.add_space(4.0);
                         ui.label(
-                            egui::RichText::new(enc_title)
-                                .font(FontId::proportional(10.0))
-                                .color(COLOR_TEXT_TERTIARY),
+                            egui::RichText::new(title)
+                                .font(FontId::proportional(11.0))
+                                .color(COLOR_TEXT_SECONDARY),
                         );
-
-                        let events = [
-                            (EncoderEvent::Ccw, "CCW"),
-                            (EncoderEvent::Press, "PUSH"),
-                            (EncoderEvent::Cw, "CW"),
-                        ];
-
                         ui.horizontal(|ui| {
-                            for (ev, symbol) in events {
+                            for (ev, tag) in [
+                                (EncoderEvent::Ccw, "CCW"),
+                                (EncoderEvent::Press, "PUSH"),
+                                (EncoderEvent::Cw, "CW"),
+                            ] {
                                 let slot = SlotId {
                                     layer: state.editing_layer,
                                     control: ControlId::Encoder {
-                                        index: enc_idx,
+                                        index: idx,
                                         event: ev,
                                     },
                                 };
-                                let badge = state.get_badge_for_slot(slot);
-                                let config = state.get_slot_config(slot);
-                                let label = config.map(|c| c.label.as_str()).unwrap_or(symbol);
-                                let is_sel = state.selected_slot == Some(slot);
-
-                                let (pill_rect, _) =
-                                    ui.allocate_exact_size(vec2(52.0, 34.0), egui::Sense::hover());
-                                let bg = if is_sel {
-                                    Color32::from_rgb(30, 45, 65)
-                                } else {
-                                    COLOR_SURFACE_CARD
-                                };
-                                ui.painter().rect_filled(pill_rect, Rounding::same(6.0), bg);
-                                ui.painter().rect_stroke(
-                                    pill_rect,
-                                    Rounding::same(6.0),
-                                    Stroke::new(
-                                        1.0_f32,
-                                        if is_sel {
-                                            COLOR_APPLE_BLUE
-                                        } else {
-                                            COLOR_BORDER_SUBTLE
-                                        },
-                                    ),
-                                );
-
-                                // Symbol in alto
-                                ui.painter().text(
-                                    pos2(pill_rect.min.x + 5.0, pill_rect.min.y + 4.0),
-                                    Align2::LEFT_TOP,
-                                    symbol,
-                                    FontId::proportional(8.5),
-                                    COLOR_TEXT_SECONDARY,
-                                );
-
-                                // Badge in alto a destra
-                                ui.painter().text(
-                                    pos2(pill_rect.max.x - 4.0, pill_rect.min.y + 4.0),
-                                    Align2::RIGHT_TOP,
-                                    badge,
-                                    FontId::proportional(8.0),
-                                    badge_color(badge),
-                                );
-
-                                // Label al centro
-                                let display_lbl = if label.chars().count() > 6 {
-                                    format!("{}..", label.chars().take(5).collect::<String>())
-                                } else {
-                                    label.to_string()
-                                };
-                                ui.painter().text(
-                                    pos2(pill_rect.center().x, pill_rect.center().y + 4.0),
-                                    Align2::CENTER_CENTER,
-                                    display_lbl,
-                                    FontId::proportional(10.0),
-                                    COLOR_TEXT_PRIMARY,
-                                );
+                                Self::draw_osd_cell(ui, slot, vec2(74.0, 42.0), Some(tag), state);
                             }
                         });
-                        ui.add_space(4.0);
                     }
                 });
             });
         });
     }
 
-    /// Disegna un singolo tasto compatto HUD
-    fn draw_hud_key(ui: &mut Ui, size: Vec2, slot: SlotId, state: &UiState) {
-        let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
-        let is_selected = state.selected_slot == Some(slot);
-        let config = state.get_slot_config(slot);
+    fn draw_osd_cell(
+        ui: &mut Ui,
+        slot: SlotId,
+        size: egui::Vec2,
+        prefix: Option<&str>,
+        state: &UiState,
+    ) {
+        let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+        let p = ui.painter();
 
-        let bg = if is_selected {
-            Color32::from_rgb(30, 45, 65)
-        } else {
-            COLOR_SURFACE_CARD
-        };
-        let stroke = if is_selected {
-            Stroke::new(1.5_f32, COLOR_APPLE_BLUE)
-        } else {
-            Stroke::new(1.0_f32, COLOR_BORDER_SUBTLE)
-        };
-
-        ui.painter().rect_filled(rect, Rounding::same(6.0), bg);
-        ui.painter().rect_stroke(rect, Rounding::same(6.0), stroke);
-
-        // Badge pill in alto a sinistra
-        let badge_text = state.get_badge_for_slot(slot);
-        let badge_bg = badge_color(badge_text);
-        ui.painter().text(
-            pos2(rect.min.x + 5.0, rect.min.y + 4.0),
-            Align2::LEFT_TOP,
-            badge_text,
-            FontId::proportional(8.0),
-            badge_bg,
+        p.rect_filled(rect, Rounding::same(8.0), COLOR_SURFACE_INSET);
+        p.rect_stroke(
+            rect,
+            Rounding::same(8.0),
+            Stroke::new(1.0_f32, COLOR_BORDER_SUBTLE),
         );
 
-        // Label tasto
-        let label_text = config.map(|c| c.label.as_str()).unwrap_or("-");
-        let display_lbl = if label_text.chars().count() > 8 {
-            format!("{}..", label_text.chars().take(7).collect::<String>())
-        } else {
-            label_text.to_string()
-        };
+        let badge = state.get_badge_for_slot(slot);
+        let b_col = badge_color(badge);
 
-        ui.painter().text(
-            pos2(rect.center().x, rect.center().y + 1.0),
-            Align2::CENTER_CENTER,
-            display_lbl,
-            FontId::proportional(11.0),
-            COLOR_TEXT_PRIMARY,
-        );
-
-        // Trigger token in basso
-        if let Some(token) = state.get_trigger_token_for_slot(slot) {
-            ui.painter().text(
-                pos2(rect.center().x, rect.max.y - 3.0),
-                Align2::CENTER_BOTTOM,
-                token,
-                FontId::proportional(8.0),
+        if let Some(pre) = prefix {
+            p.text(
+                pos2(rect.min.x + 6.0, rect.min.y + 5.0),
+                Align2::LEFT_TOP,
+                pre,
+                FontId::proportional(8.5),
                 COLOR_TEXT_TERTIARY,
             );
         }
+
+        p.text(
+            pos2(rect.max.x - 6.0, rect.min.y + 5.0),
+            Align2::RIGHT_TOP,
+            badge,
+            FontId::proportional(8.5),
+            b_col,
+        );
+
+        let raw_lbl = state
+            .get_slot_config(slot)
+            .map(|c| c.label.as_str())
+            .unwrap_or("—");
+        let lbl = if raw_lbl.chars().count() > 9 {
+            format!("{}..", raw_lbl.chars().take(8).collect::<String>())
+        } else {
+            raw_lbl.to_string()
+        };
+
+        p.text(
+            pos2(rect.center().x, rect.center().y + 6.0),
+            Align2::CENTER_CENTER,
+            lbl,
+            FontId::proportional(11.0),
+            COLOR_TEXT_PRIMARY,
+        );
     }
 }
 
@@ -289,9 +188,7 @@ mod tests {
 
     #[test]
     fn test_hud_window_instantiation() {
-        let mut hud = HudWindow::new();
-        assert!(!hud.is_visible);
-        hud.is_visible = true;
-        assert!(hud.is_visible);
+        let h = HudWindow::new();
+        assert!(!h.is_visible);
     }
 }
