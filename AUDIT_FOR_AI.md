@@ -284,3 +284,17 @@ Se vieni incaricato di espandere ulteriormente VortexDeck, ecco i compiti a più
 4. **Resilienza System Tray su Shell Riavviata / Ritardata (`crates/app/src/tray.rs`)**:
    - Aggiunto loop con 15 retry (500ms) all'avvio in background per attendere la disponibilità della shell di Windows.
    - Sottoscritto il messaggio `TaskbarCreated`: ripristino istantaneo dell'icona nella barra di notifica in caso di crash o riavvio di `explorer.exe`.
+
+
+---
+
+### Sessione 19: Fix Chirurgico Pulsante "Avvio Win: ON/OFF" e Doppia Persistenza
+1. **Doppia Persistenza Autostart Garantita (`crates/platform/src/windows/windows_api.rs`)**:
+   - `set_autostart_enabled(true)` crea SEMPRE il collegamento `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\VortexDeck.lnk` via Win32 COM `IShellLinkW` + `IPersistFile` con argomenti `--background` e working directory corretta.
+   - Scrive inoltre la chiave nel Registro Windows `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` (`"VortexDeck"` = `"<exe>" --background`) e sblocca sia `StartupApproved\Run` sia `StartupApproved\StartupFolder` (`[0x02, ...]`).
+   - `is_autostart_enabled()` risponde `true` se il file `.lnk` esiste su disco o se la query sul registro ha esito positivo con lunghezza > 4.
+2. **Aggiornamento di Stato Immediato nel Coordinator (`crates/app/src/coordinator.rs`)**:
+   - `toggle_autostart()` imposta direttamente `self.autostart_enabled = target;` al ritorno positivo di `set_autostart_enabled()`, eliminando ogni sovrascrittura temporale.
+3. **Sincronizzazione Bidirezionale UI (`crates/app/src/main.rs`, `crates/ui/src/doctor_panel.rs`)**:
+   - La Toolbar superiore e il pannello Diagnostica condividono e sincronizzano lo stato del flag a video.
+   - Il modulo `dispatcher.rs` e la gestione di `agy` sono rimasti completamente inalterati.

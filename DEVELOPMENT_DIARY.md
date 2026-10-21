@@ -294,3 +294,33 @@
   - `cargo clippy --workspace --all-targets -- -D warnings`: **0 warning**.
   - `cargo test --workspace`: **100% superati (76 unit & integration tests)**.
   - `build_release.ps1`: Pacchetto distribuibile e icona PE generati in [`dist/VortexDeck/vortexdeck.exe`](dist/VortexDeck/vortexdeck.exe).
+
+
+---
+
+### Sessione 19: Fix Chirurgico Pulsante "Avvio Win: ON/OFF" (Doppia Persistenza Startup .lnk + HKCU Run)
+- **Data**: `2026-10-21`
+- **Motivazione**: Risolvere il problema per cui il toggle "Avvio Win: OFF" non commutava a "Avvio Win: ON" al click a causa della cancellazione del file `.lnk` in Startup, del mancato aggiornamento di stato diretto nel Coordinator e della sovrascrittura immediata causata da una rilettura da registro soggetta a ritardi di Windows Defender.
+- **Interventi Realizzati**:
+  1. **Doppia Persistenza Autostart Garantita (`crates/platform/src/windows/windows_api.rs`)**:
+     - `set_autostart_enabled(true)`:
+       * Chiama `CoInitializeEx(None, COINIT_APARTMENTTHREADED)`.
+       * Crea SEMPRE il collegamento `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\VortexDeck.lnk` via `IShellLinkW` + `IPersistFile` con argomenti `--background` e working directory corretta.
+       * Scrive la chiave nel Registro Windows `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` (`"VortexDeck"` = `"<exe>" --background`).
+       * Sblocca sia `StartupApproved\Run` sia `StartupApproved\StartupFolder` con il payload binario a 12 byte `[0x02, ...]`.
+       * Restituisce `Ok(())` se almeno uno tra il file `.lnk` e il Registro ha avuto successo.
+     - `set_autostart_enabled(false)`:
+       * Rimuove il file `.lnk` da `Startup` ed elimina i valori da `HKCU\...\Run` e `StartupApproved`.
+     - `is_autostart_enabled() -> bool`:
+       * Restituisce `true` se il file `.lnk` esiste su disco (`lnk_path.exists()`), OPPURE se la query sul Registro trova la chiave con lunghezza > 4.
+  2. **Aggiornamento Stato Immediato nel Coordinator (`crates/app/src/coordinator.rs`)**:
+     - In `toggle_autostart(&mut self)`, quando `set_autostart_enabled(target)` restituisce `Ok(())`, assegna direttamente `self.autostart_enabled = target;` senza sovrascriverlo con riletture fallaci, e invia la notifica di successo a video.
+  3. **Sincronizzazione Bidirezionale e Hit-Box Toolbar (`crates/app/src/main.rs`, `crates/ui/src/doctor_panel.rs`)**:
+     - Sincronizzato il toggle tra la Toolbar superiore e il pannello Diagnostica (`DoctorPanel`).
+     - Corretto l'evento `TrayAction::ToggleAutostart` nella System Tray affinché chiami `self.coordinator.toggle_autostart()`.
+     - Confermato che `dispatcher.rs` e il modulo `agy` non sono stati alterati.
+- **Esito Verifiche**:
+  - `cargo fmt --all`: **Conforme**.
+  - `cargo clippy --workspace --all-targets -- -D warnings`: **0 warning**.
+  - `cargo test --workspace`: **100% superati (76 unit & integration tests)**.
+  - `build_release.ps1`: Eseguibile ricompilato e aggiornato in [`dist/VortexDeck/vortexdeck.exe`](dist/VortexDeck/vortexdeck.exe).

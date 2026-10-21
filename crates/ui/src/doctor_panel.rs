@@ -261,7 +261,7 @@ impl DoctorPanel {
                                         StatusLevel::Error,
                                     );
                                 } else {
-                                    self.autostart_enabled = p.is_autostart_enabled();
+                                    self.autostart_enabled = autostart;
                                     if self.autostart_enabled {
                                         state.set_status(
                                             "Avvio automatico con Windows ATTIVATO (partirà in background all'accensione).",

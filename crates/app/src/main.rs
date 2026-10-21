@@ -214,16 +214,8 @@ impl eframe::App for VortexDeckApp {
                         .send(CoordinatorCommand::TogglePause);
                 }
                 TrayAction::ToggleAutostart => {
-                    self.coordinator.autostart_enabled =
-                        self.coordinator.platform.is_autostart_enabled();
-                    let msg = if self.coordinator.autostart_enabled {
-                        "Avvio automatico con Windows ATTIVATO (partirà in background all'accensione)."
-                    } else {
-                        "Avvio automatico con Windows DISATTIVATO."
-                    };
-                    self.coordinator
-                        .ui_state
-                        .set_status(msg, StatusLevel::Success);
+                    self.coordinator.toggle_autostart();
+                    self.studio_ui.doctor.autostart_enabled = self.coordinator.autostart_enabled;
                 }
                 TrayAction::ShowHud => {
                     self.hud_dismiss_at = Some(Instant::now() + Duration::from_millis(1500));
@@ -513,11 +505,13 @@ impl eframe::App for VortexDeckApp {
                 ..Default::default()
             })
             .show(ctx, |ui| {
+                self.studio_ui.doctor.autostart_enabled = self.coordinator.autostart_enabled;
                 self.studio_ui.show(
                     ui,
                     &mut self.coordinator.ui_state,
                     Some(self.coordinator.platform.as_ref()),
                 );
+                self.coordinator.autostart_enabled = self.studio_ui.doctor.autostart_enabled;
             });
 
         // Modale di conferma scrittura Flash

@@ -485,7 +485,16 @@ pub fn is_autostart_enabled() -> bool {
 }
 
 pub fn is_autostart_enabled_named(value_name: &str) -> bool {
-    // 1. Controlla chiave di registro HKCU Run (metodo primario)
+    // 1. Controllo primario: presenza del file .lnk nella cartella Startup
+    if value_name == "VortexDeck" {
+        if let Some(lnk_path) = get_startup_lnk_path() {
+            if lnk_path.exists() {
+                return true;
+            }
+        }
+    }
+
+    // 2. Controllo secondario: chiave di registro HKCU Run (len > 4)
     unsafe {
         use windows::core::PCWSTR;
         use windows::Win32::System::Registry::{
@@ -524,16 +533,7 @@ pub fn is_autostart_enabled_named(value_name: &str) -> bool {
             };
             let _ = RegCloseKey(hkey);
 
-            if (query_res.is_ok() || legacy_res.is_ok()) && len > 0 {
-                return true;
-            }
-        }
-    }
-
-    // 2. Fallback: controlla presenza file .lnk nella cartella Startup
-    if value_name == "VortexDeck" {
-        if let Some(lnk_path) = get_startup_lnk_path() {
-            if lnk_path.exists() {
+            if (query_res.is_ok() || legacy_res.is_ok()) && len > 4 {
                 return true;
             }
         }
@@ -548,16 +548,24 @@ pub fn set_autostart_enabled(enabled: bool) -> Result<(), PlatformError> {
 
 pub fn set_autostart_enabled_named(value_name: &str, enabled: bool) -> Result<(), PlatformError> {
     unsafe {
-        use windows::core::PCWSTR;
+        use windows::core::{Interface, PCWSTR};
+        use windows::Win32::System::Com::{
+            CoCreateInstance, CoInitializeEx, IPersistFile, CLSCTX_INPROC_SERVER,
+            COINIT_APARTMENTTHREADED,
+        };
         use windows::Win32::System::Registry::{
             RegCloseKey, RegCreateKeyExW, RegDeleteValueW, RegOpenKeyExW, RegSetValueExW, HKEY,
             HKEY_CURRENT_USER, KEY_READ, KEY_WRITE, REG_BINARY, REG_OPEN_CREATE_OPTIONS, REG_SZ,
         };
+        use windows::Win32::UI::Shell::{IShellLinkW, ShellLink};
 
         const RUN_KEY_PATH: PCWSTR =
             windows::core::w!("Software\\Microsoft\\Windows\\CurrentVersion\\Run");
         const STARTUP_APPROVED_PATH: PCWSTR = windows::core::w!(
             "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run"
+        );
+        const STARTUP_FOLDER_APPROVED_PATH: PCWSTR = windows::core::w!(
+            "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\StartupFolder"
         );
 
         let exe = std::env::current_exe().map_err(|e| PlatformError::SystemApi(e.to_string()))?;
@@ -577,7 +585,55 @@ pub fn set_autostart_enabled_named(value_name: &str, enabled: bool) -> Result<()
         let app_val_pcwstr = PCWSTR(wide_name.as_ptr());
 
         if enabled {
-            // 1. Scrittura Chiave Registro HKCU\Software\Microsoft\Windows\CurrentVersion\Run
+            let mut lnk_ok = false;
+            let mut reg_ok = false;
+
+            // a) & b) Crea SEMPRE il file .lnk nella cartella Startup tramite IShellLinkW + IPersistFile
+            if value_name == "VortexDeck" {
+                let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+                if let Some(lnk_path) = get_startup_lnk_path() {
+                    if let Some(parent) = lnk_path.parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+                    if let Ok(shell_link) =
+                        CoCreateInstance::<_, IShellLinkW>(&ShellLink, None, CLSCTX_INPROC_SERVER)
+                    {
+                        let prog_wide: Vec<u16> = exe
+                            .to_string_lossy()
+                            .encode_utf16()
+                            .chain(std::iter::once(0))
+                            .collect();
+                        let _ = shell_link.SetPath(PCWSTR(prog_wide.as_ptr()));
+
+                        let args_wide: Vec<u16> = "--background"
+                            .encode_utf16()
+                            .chain(std::iter::once(0))
+                            .collect();
+                        let _ = shell_link.SetArguments(PCWSTR(args_wide.as_ptr()));
+
+                        if let Some(parent_dir) = exe.parent() {
+                            let wd_wide: Vec<u16> = parent_dir
+                                .to_string_lossy()
+                                .encode_utf16()
+                                .chain(std::iter::once(0))
+                                .collect();
+                            let _ = shell_link.SetWorkingDirectory(PCWSTR(wd_wide.as_ptr()));
+                        }
+
+                        if let Ok(persist_file) = shell_link.cast::<IPersistFile>() {
+                            let path_wide: Vec<u16> = lnk_path
+                                .to_string_lossy()
+                                .encode_utf16()
+                                .chain(std::iter::once(0))
+                                .collect();
+                            let _ = persist_file.Save(PCWSTR(path_wide.as_ptr()), true);
+                        }
+                    }
+                    lnk_ok = lnk_path.exists();
+                }
+            }
+
+            // c) Scrittura Chiave Registro HKCU\Software\Microsoft\Windows\CurrentVersion\Run
             let mut hkey = HKEY::default();
             let mut disp = windows::Win32::System::Registry::REG_CREATE_KEY_DISPOSITION::default();
             let reg_create_res = RegCreateKeyExW(
@@ -619,15 +675,21 @@ pub fn set_autostart_enabled_named(value_name: &str, enabled: bool) -> Result<()
                 if value_name == "VortexDeck" {
                     let _ = RegDeleteValueW(hkey, windows::core::w!("CH57xStudio"));
                 }
-                let _ = RegSetValueExW(hkey, app_val_pcwstr, None, REG_SZ, Some(bytes));
+                if RegSetValueExW(hkey, app_val_pcwstr, None, REG_SZ, Some(bytes)).is_ok() {
+                    reg_ok = true;
+                }
                 let _ = RegCloseKey(hkey);
             }
 
-            // 2. Sblocco StartupApproved\Run di Windows 11 (12 byte binari abilitati [0x02, ...])
+            // d) Sblocco sia StartupApproved\Run sia StartupApproved\StartupFolder di Windows 11
+            let approved_bytes: [u8; 12] = [
+                0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            ];
+
             let mut approved_hkey = HKEY::default();
             let mut disp_app =
                 windows::Win32::System::Registry::REG_CREATE_KEY_DISPOSITION::default();
-            let _ = RegCreateKeyExW(
+            if RegCreateKeyExW(
                 HKEY_CURRENT_USER,
                 STARTUP_APPROVED_PATH,
                 Some(0),
@@ -637,12 +699,10 @@ pub fn set_autostart_enabled_named(value_name: &str, enabled: bool) -> Result<()
                 None,
                 &mut approved_hkey,
                 Some(&mut disp_app),
-            );
-
-            if !approved_hkey.is_invalid() {
-                let approved_bytes: [u8; 12] = [
-                    0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                ];
+            )
+            .is_ok()
+                && !approved_hkey.is_invalid()
+            {
                 let _ = RegSetValueExW(
                     approved_hkey,
                     app_val_pcwstr,
@@ -656,7 +716,47 @@ pub fn set_autostart_enabled_named(value_name: &str, enabled: bool) -> Result<()
                 let _ = RegCloseKey(approved_hkey);
             }
 
-            // 3. Rimuovi eventuale vecchio duplicato .lnk in Startup per evitare doppio avvio simultaneo in conflitto
+            if value_name == "VortexDeck" {
+                let mut sf_hkey = HKEY::default();
+                let mut disp_sf =
+                    windows::Win32::System::Registry::REG_CREATE_KEY_DISPOSITION::default();
+                if RegCreateKeyExW(
+                    HKEY_CURRENT_USER,
+                    STARTUP_FOLDER_APPROVED_PATH,
+                    Some(0),
+                    None,
+                    REG_OPEN_CREATE_OPTIONS(0),
+                    KEY_READ | KEY_WRITE,
+                    None,
+                    &mut sf_hkey,
+                    Some(&mut disp_sf),
+                )
+                .is_ok()
+                    && !sf_hkey.is_invalid()
+                {
+                    let _ = RegSetValueExW(
+                        sf_hkey,
+                        windows::core::w!("VortexDeck.lnk"),
+                        None,
+                        REG_BINARY,
+                        Some(&approved_bytes),
+                    );
+                    let _ = RegCloseKey(sf_hkey);
+                }
+            }
+
+            // e) Restituisci Ok(()) se ALMENO UNO tra il file .lnk e la chiave Run è riuscito
+            if lnk_ok || reg_ok {
+                Ok(())
+            } else {
+                Err(PlatformError::SystemApi(
+                    "Impossibile abilitare l'avvio automatico né via Startup link né via Registro"
+                        .into(),
+                ))
+            }
+        } else {
+            // Disabilitazione
+            // a) Elimina %APPDATA%\...\Startup\VortexDeck.lnk se esiste
             if value_name == "VortexDeck" {
                 if let Some(lnk_path) = get_startup_lnk_path() {
                     if lnk_path.exists() {
@@ -664,9 +764,8 @@ pub fn set_autostart_enabled_named(value_name: &str, enabled: bool) -> Result<()
                     }
                 }
             }
-        } else {
-            // Disabilitazione
-            // 1. Rimuovi valore Run
+
+            // b) Rimuovi valore Run
             let mut hkey = HKEY::default();
             if RegOpenKeyExW(HKEY_CURRENT_USER, RUN_KEY_PATH, None, KEY_WRITE, &mut hkey).is_ok() {
                 let _ = RegDeleteValueW(hkey, app_val_pcwstr);
@@ -676,7 +775,7 @@ pub fn set_autostart_enabled_named(value_name: &str, enabled: bool) -> Result<()
                 let _ = RegCloseKey(hkey);
             }
 
-            // 2. Rimuovi valore StartupApproved
+            // c) Rimuovi valore StartupApproved\Run
             let mut approved_hkey = HKEY::default();
             if RegOpenKeyExW(
                 HKEY_CURRENT_USER,
@@ -694,18 +793,26 @@ pub fn set_autostart_enabled_named(value_name: &str, enabled: bool) -> Result<()
                 let _ = RegCloseKey(approved_hkey);
             }
 
-            // 3. Rimuovi file .lnk da Startup se presente
+            // d) Rimuovi valore StartupApproved\StartupFolder
             if value_name == "VortexDeck" {
-                if let Some(lnk_path) = get_startup_lnk_path() {
-                    if lnk_path.exists() {
-                        let _ = std::fs::remove_file(lnk_path);
-                    }
+                let mut sf_hkey = HKEY::default();
+                if RegOpenKeyExW(
+                    HKEY_CURRENT_USER,
+                    STARTUP_FOLDER_APPROVED_PATH,
+                    None,
+                    KEY_WRITE,
+                    &mut sf_hkey,
+                )
+                .is_ok()
+                {
+                    let _ = RegDeleteValueW(sf_hkey, windows::core::w!("VortexDeck.lnk"));
+                    let _ = RegCloseKey(sf_hkey);
                 }
             }
+
+            Ok(())
         }
     }
-
-    Ok(())
 }
 
 /// Ritorna la cartella Home dell'utente (USERPROFILE o HOME)

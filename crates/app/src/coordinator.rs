@@ -216,9 +216,8 @@ impl AppCoordinator {
         let target = !self.autostart_enabled;
         match self.platform.set_autostart_enabled(target) {
             Ok(_) => {
-                // Rileggi lo stato reale dal sistema operativo per conferma al 100%
-                self.autostart_enabled = self.platform.is_autostart_enabled();
-                let msg = if self.autostart_enabled {
+                self.autostart_enabled = target;
+                let msg = if target {
                     "Avvio automatico con Windows ATTIVATO (partirà in background all'accensione)."
                 } else {
                     "Avvio automatico con Windows DISATTIVATO."
