@@ -24,6 +24,7 @@ pub fn get_platform() -> CurrentPlatform {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(target_os = "windows")]
     use ch57x_domain::triggers::{PhantomTrigger, TriggerBank};
 
     #[test]

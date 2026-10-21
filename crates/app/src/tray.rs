@@ -11,6 +11,7 @@
 use crossbeam_channel::{unbounded, Receiver};
 use tracing::info;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrayAction {
     ShowWindow,
@@ -37,6 +38,9 @@ impl TrayHandle {
                 windows_tray::run_tray_loop(tx);
             })
         };
+
+        #[cfg(not(target_os = "windows"))]
+        let _ = sender;
 
         info!("System Tray inizializzato.");
         Self {
