@@ -205,23 +205,23 @@ mod tests {
 
         allocate_triggers(&mut profile).expect("Allocation should succeed");
 
-        // Slot 0 deve aver preservato il suo trigger (alt-f13, pool_index 36)
+        // Slot 0 deve aver preservato il suo trigger (Bank D index 0: ctrl-alt-shift-p)
         assert_eq!(
             profile
                 .trigger_allocation
                 .get(&slot_0)
                 .unwrap()
                 .yaml_token(),
-            "alt-f13"
+            "ctrl-alt-shift-p"
         );
-        // Slot 1 deve aver ricevuto il primo libero (f13, pool_index 0)
+        // Slot 1 deve aver ricevuto il primo libero (Bank A index 0: ctrl-alt-shift-f1)
         assert_eq!(
             profile
                 .trigger_allocation
                 .get(&slot_1)
                 .unwrap()
                 .yaml_token(),
-            "f13"
+            "ctrl-alt-shift-f1"
         );
     }
 

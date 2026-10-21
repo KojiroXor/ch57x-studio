@@ -155,7 +155,7 @@ mod tests {
         assert!(yaml.contains("\"ctrl-shift-c\""));
         assert!(yaml.contains("\"volumeup\""));
         assert!(yaml.contains("\"click\""));
-        assert!(yaml.contains("\"f13\"")); // Primo trigger allocato per slot 3
+        assert!(yaml.contains("\"ctrl-alt-shift-f1\"")); // Primo trigger allocato per slot 3
     }
 
     #[test]

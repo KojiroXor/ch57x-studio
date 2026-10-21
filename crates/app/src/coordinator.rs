@@ -318,6 +318,9 @@ impl AppCoordinator {
                 let _ = self.platform.hotkeys().unregister_all();
                 let _ = self.platform.hotkeys().register_triggers(&triggers);
 
+                // Sincronizza scorciatoie Start Menu per apertura rapida processi anche ad app chiusa
+                let _ = self.platform.sync_shortcuts(&self.profile);
+
                 true
             }
             Err(e) => {
@@ -451,5 +454,20 @@ impl AppCoordinator {
             .map_err(|e| format!("Impossibile avviare il thread di flash: {e}"))?;
 
         Ok(())
+    }
+
+    /// Verifica se la configurazione attuale differisce dalla memoria flash hardware (richiede upload USB)
+    pub fn requires_hardware_flash(&self) -> bool {
+        let mut profile = self.ui_state.profile.clone();
+        if allocate_triggers(&mut profile).is_err() {
+            return false;
+        }
+        if let Ok(yaml_str) = generate_yaml(&profile) {
+            let last_hash = self.journal.last_uploaded_yaml_hash.as_deref();
+            let decision = DeploymentDecision::new(&yaml_str, last_hash);
+            decision.requires_hardware_flash
+        } else {
+            false
+        }
     }
 }

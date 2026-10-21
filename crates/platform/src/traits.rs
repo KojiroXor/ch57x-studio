@@ -15,6 +15,19 @@ pub trait PlatformBackend: Send + Sync {
     fn adjust_brightness(&self, _delta: i32) -> Result<u32, PlatformError> {
         Ok(50)
     }
+    fn sync_shortcuts(
+        &self,
+        _profile: &ch57x_domain::profile::Profile,
+    ) -> Result<(), PlatformError> {
+        Ok(())
+    }
+    fn is_autostart_enabled(&self) -> bool {
+        self.autostart().is_enabled().unwrap_or(false)
+    }
+    fn set_autostart_enabled(&self, enabled: bool) -> Result<(), PlatformError> {
+        let exe = std::env::current_exe().map_err(|e| PlatformError::SystemApi(e.to_string()))?;
+        self.autostart().set_enabled(enabled, &exe)
+    }
 }
 
 pub trait HotkeyBackend: Send + Sync {

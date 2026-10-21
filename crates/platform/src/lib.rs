@@ -57,40 +57,43 @@ mod tests {
     #[test]
     fn test_win32_trigger_conversion_all_banks() {
         use ::windows::Win32::UI::Input::KeyboardAndMouse::{
-            MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, VK_F13, VK_F24,
+            MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN, VIRTUAL_KEY, VK_F1, VK_OEM_MINUS,
         };
 
-        // Bank A: No mods, F13..F24
-        for k in 13..=24 {
-            let trigger = PhantomTrigger::new(TriggerBank::BankA, k).unwrap();
-            let (mods, vk) = crate::windows::hotkeys::trigger_to_win32(&trigger);
-            assert_eq!(mods, MOD_NOREPEAT);
-            assert_eq!(vk.0, VK_F13.0 + (k - 13) as u16);
-        }
+        // Bank A: Ctrl+Alt+Shift + F1..F11, 0
+        let t_a0 = PhantomTrigger::from_pool_index(0).unwrap();
+        let (mods_a0, vk_a0) = crate::windows::hotkeys::trigger_to_win32(&t_a0);
+        assert_eq!(mods_a0, MOD_CONTROL | MOD_ALT | MOD_SHIFT);
+        assert_eq!(vk_a0, VK_F1);
 
-        // Bank B: Ctrl + F13..F24
-        let t_b = PhantomTrigger::new(TriggerBank::BankB, 15).unwrap();
+        let t_a11 = PhantomTrigger::from_pool_index(11).unwrap();
+        let (mods_a11, vk_a11) = crate::windows::hotkeys::trigger_to_win32(&t_a11);
+        assert_eq!(mods_a11, MOD_CONTROL | MOD_ALT | MOD_SHIFT);
+        assert_eq!(vk_a11, VIRTUAL_KEY(0x30)); // '0'
+
+        // Bank B: Ctrl+Alt+Shift + 1..9, a, b, c
+        let t_b = PhantomTrigger::from_pool_index(12).unwrap();
         let (mods_b, vk_b) = crate::windows::hotkeys::trigger_to_win32(&t_b);
-        assert_eq!(mods_b, MOD_CONTROL | MOD_NOREPEAT);
-        assert_eq!(vk_b.0, VK_F13.0 + 2);
+        assert_eq!(mods_b, MOD_CONTROL | MOD_ALT | MOD_SHIFT);
+        assert_eq!(vk_b, VIRTUAL_KEY(0x31)); // '1'
 
-        // Bank C: Shift + F13..F24
-        let t_c = PhantomTrigger::new(TriggerBank::BankC, 24).unwrap();
+        // Bank C: Ctrl+Alt+Shift + d..o
+        let t_c = PhantomTrigger::from_pool_index(24).unwrap();
         let (mods_c, vk_c) = crate::windows::hotkeys::trigger_to_win32(&t_c);
-        assert_eq!(mods_c, MOD_SHIFT | MOD_NOREPEAT);
-        assert_eq!(vk_c, VK_F24);
+        assert_eq!(mods_c, MOD_CONTROL | MOD_ALT | MOD_SHIFT);
+        assert_eq!(vk_c, VIRTUAL_KEY(0x44)); // 'D'
 
-        // Bank D: Alt + F13..F24
-        let t_d = PhantomTrigger::new(TriggerBank::BankD, 13).unwrap();
+        // Bank D: Ctrl+Alt+Shift + p..z, minus
+        let t_d = PhantomTrigger::from_pool_index(47).unwrap();
         let (mods_d, vk_d) = crate::windows::hotkeys::trigger_to_win32(&t_d);
-        assert_eq!(mods_d, MOD_ALT | MOD_NOREPEAT);
-        assert_eq!(vk_d, VK_F13);
+        assert_eq!(mods_d, MOD_CONTROL | MOD_ALT | MOD_SHIFT);
+        assert_eq!(vk_d, VK_OEM_MINUS);
 
-        // Bank E: Ctrl + Shift + F13..F24
-        let t_e = PhantomTrigger::new(TriggerBank::BankE, 20).unwrap();
+        // Bank E: Ctrl+Alt+Win + F1..F11, 0
+        let t_e = PhantomTrigger::from_pool_index(48).unwrap();
         let (mods_e, vk_e) = crate::windows::hotkeys::trigger_to_win32(&t_e);
-        assert_eq!(mods_e, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT);
-        assert_eq!(vk_e.0, VK_F13.0 + 7);
+        assert_eq!(mods_e, MOD_CONTROL | MOD_ALT | MOD_WIN);
+        assert_eq!(vk_e, VK_F1);
     }
 
     #[cfg(target_os = "windows")]

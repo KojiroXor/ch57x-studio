@@ -109,6 +109,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .command_sender
                             .send(CoordinatorCommand::TogglePause)?;
                     }
+                    TrayAction::ToggleAutostart => {
+                        let current = coordinator.platform.is_autostart_enabled();
+                        let _ = coordinator.platform.set_autostart_enabled(!current);
+                    }
                     TrayAction::ShowHud => {}
                     TrayAction::Quit => return Ok(()),
                 }
@@ -161,6 +165,9 @@ struct VortexDeckApp {
 impl eframe::App for VortexDeckApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if ctx.input(|i| i.viewport().close_requested()) && !self.is_quitting {
+            if self.coordinator.ui_state.is_dirty {
+                self.coordinator.save_active_profile();
+            }
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
         }
@@ -178,11 +185,32 @@ impl eframe::App for VortexDeckApp {
                         .command_sender
                         .send(CoordinatorCommand::TogglePause);
                 }
+                TrayAction::ToggleAutostart => {
+                    let current = self.coordinator.platform.is_autostart_enabled();
+                    let new_state = !current;
+                    if let Err(e) = self.coordinator.platform.set_autostart_enabled(new_state) {
+                        self.coordinator
+                            .ui_state
+                            .set_status(format!("Errore autostart: {e}"), StatusLevel::Error);
+                    } else {
+                        let msg = if new_state {
+                            "Avvio con Windows ABILITATO (HKCU Run)."
+                        } else {
+                            "Avvio con Windows DISABILITATO."
+                        };
+                        self.coordinator
+                            .ui_state
+                            .set_status(msg, StatusLevel::Success);
+                    }
+                }
                 TrayAction::ShowHud => {
                     self.hud_dismiss_at = Some(Instant::now() + Duration::from_millis(1500));
                     ctx.request_repaint();
                 }
                 TrayAction::Quit => {
+                    if self.coordinator.ui_state.is_dirty {
+                        self.coordinator.save_active_profile();
+                    }
                     self.is_quitting = true;
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
@@ -302,6 +330,90 @@ impl eframe::App for VortexDeckApp {
                                 .coordinator
                                 .command_sender
                                 .send(CoordinatorCommand::TogglePause);
+                        }
+
+                        // Toggle Avvio con Windows (ON/OFF)
+                        let autostart_on = self.coordinator.platform.is_autostart_enabled();
+                        let (autostart_text, autostart_bg, autostart_fg, autostart_stroke, autostart_tip) =
+                            if autostart_on {
+                                (
+                                    "● Avvio Win: ON",
+                                    Color32::from_rgba_premultiplied(18, 55, 30, 220),
+                                    COLOR_APPLE_GREEN,
+                                    Stroke::new(1.0_f32, COLOR_APPLE_GREEN),
+                                    "VortexDeck si avvia automaticamente in background con Windows. Clicca per disattivare.",
+                                )
+                            } else {
+                                (
+                                    "○ Avvio Win: OFF",
+                                    COLOR_CONTROL_INACTIVE,
+                                    COLOR_TEXT_SECONDARY,
+                                    Stroke::new(1.0_f32, COLOR_BORDER_SUBTLE),
+                                    "Clicca per avviare automaticamente VortexDeck all'accensione di Windows.",
+                                )
+                            };
+
+                        let autostart_btn = egui::Button::new(
+                            egui::RichText::new(autostart_text)
+                                .font(FontId::proportional(11.5))
+                                .strong()
+                                .color(autostart_fg),
+                        )
+                        .fill(autostart_bg)
+                        .stroke(autostart_stroke)
+                        .rounding(Rounding::same(8.0))
+                        .min_size(vec2(0.0, 28.0));
+
+                        if ui.add(autostart_btn).on_hover_text(autostart_tip).clicked() {
+                            let new_state = !autostart_on;
+                            if let Err(e) =
+                                self.coordinator.platform.set_autostart_enabled(new_state)
+                            {
+                                self.coordinator.ui_state.set_status(
+                                    format!("Errore autostart: {e}"),
+                                    StatusLevel::Error,
+                                );
+                            } else {
+                                let msg = if new_state {
+                                    "Avvio con Windows ABILITATO (HKCU Run)."
+                                } else {
+                                    "Avvio con Windows DISABILITATO."
+                                };
+                                self.coordinator.ui_state.set_status(msg, StatusLevel::Success);
+                            }
+                        }
+
+                        // Badge di avviso se è necessario il Flash USB per aggiornare il firmware / BLE
+                        if self.coordinator.requires_hardware_flash() {
+                            let flash_warn_btn = egui::Button::new(
+                                egui::RichText::new(
+                                    "⚠️ Flash USB necessario per aggiornare il Bluetooth",
+                                )
+                                .font(FontId::proportional(11.0))
+                                .strong()
+                                .color(COLOR_APPLE_ORANGE),
+                            )
+                            .fill(Color32::from_rgba_premultiplied(60, 40, 10, 220))
+                            .stroke(Stroke::new(1.0_f32, COLOR_APPLE_ORANGE))
+                            .rounding(Rounding::same(8.0))
+                            .min_size(vec2(0.0, 28.0));
+
+                            if ui
+                                .add(flash_warn_btn)
+                                .on_hover_text(
+                                    "Le azioni host o le mappature sono cambiate: collega il cavo USB e premi 'Scrivi su Dispositivo...' per renderle effettive anche via Bluetooth o ad app chiusa.",
+                                )
+                                .clicked()
+                            {
+                                match self.coordinator.generate_flash_preview() {
+                                    Ok(preview) => self.flash_modal_preview = Some(preview),
+                                    Err(e) => {
+                                        self.coordinator
+                                            .ui_state
+                                            .set_status(e, StatusLevel::Error)
+                                    }
+                                }
+                            }
                         }
                     });
                 });

@@ -218,3 +218,21 @@ Se vieni incaricato di espandere ulteriormente VortexDeck, ecco i compiti a più
 - **Canvas Visuale & Drag-and-Drop**: [`crates/ui/src/pad_canvas.rs`](crates/ui/src/pad_canvas.rs)
 - **Libreria Preset 1-Click**: [`crates/ui/src/presets.rs`](crates/ui/src/presets.rs)
 - **Workflow CI/CD GitHub**: [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
+
+
+---
+
+## ⚡ Aggiornamenti Architetturali Recenti (Sessione 15)
+
+1. **Trigger BLE-Safe (`crates/domain/src/triggers.rs`)**:
+   - I chip CH57x/CH58x troncano i keycode HID virtuali `> 0x65` quando operano in modalità Bluetooth Low Energy (BLE).
+   - I 60 trigger sono stati riassegnati a codici standard `< 0x65` (F1..F11, 0..9, a..z, minus) con combinazioni `Ctrl+Alt+Shift` e `Ctrl+Alt+Win`.
+   - `MOD_NOREPEAT` è stato rimosso per consentire rotazione continua fluida delle manopole.
+
+2. **Start Menu Shortcut Synchronization (`crates/platform/src/windows/shortcut_sync.rs`)**:
+   - Per le azioni `ExecProcess` (come `agy` o `wt.exe`), VortexDeck genera file `.lnk` in `%APPDATA%\Microsoft\Windows\Start Menu\Programs\VortexDeck` tramite COM `IShellLinkW`.
+   - L'impostazione di `SetHotkey(0x0700 | VK)` delega la registrazione della scorciatoia a Windows Explorer (`explorer.exe`). In questo modo, premendo il tasto o ruotando l'encoder, l'azione host si avvia anche quando il processo `vortexdeck.exe` è completamente terminato.
+
+3. **Motore Luminosità a 2 Stadi (`crates/platform/src/windows/brightness.rs`)**:
+   - *Stadio 1*: `CreateFileW(w!("\\\\.\\LCD"))` con `DeviceIoControl(IOCTL_VIDEO_QUERY_DISPLAY_BRIGHTNESS)` e `IOCTL_VIDEO_SET_DISPLAY_BRIGHTNESS`. Risponde in < 1ms sui pannelli interni di Microsoft Surface e notebook.
+   - *Stadio 2*: Fallback asincrono WMI debounced `WmiSetBrightness` e GDI `SetDeviceGammaRamp`.

@@ -3,6 +3,7 @@ pub mod hotkeys;
 pub mod input;
 pub mod monitors;
 pub mod overlay;
+pub mod shortcut_sync;
 pub mod windows_api;
 
 use crate::traits::*;
@@ -67,6 +68,13 @@ impl PlatformBackend for WindowsPlatform {
 
     fn adjust_brightness(&self, delta: i32) -> Result<u32, PlatformError> {
         brightness::adjust_brightness(delta)
+    }
+
+    fn sync_shortcuts(
+        &self,
+        profile: &ch57x_domain::profile::Profile,
+    ) -> Result<(), PlatformError> {
+        shortcut_sync::sync_start_menu_shortcuts(profile)
     }
 }
 
@@ -183,7 +191,8 @@ impl InputInjectorBackend for WindowsInputInjector {
 pub struct WindowsAutostart;
 
 const RUN_KEY_PATH: PCWSTR = w!("Software\\Microsoft\\Windows\\CurrentVersion\\Run");
-const APP_VALUE_NAME: PCWSTR = w!("CH57xStudio");
+const APP_VALUE_NAME: PCWSTR = w!("VortexDeck");
+const LEGACY_APP_VALUE_NAME: PCWSTR = w!("CH57xStudio");
 
 impl AutostartBackend for WindowsAutostart {
     fn is_enabled(&self) -> Result<bool, PlatformError> {
@@ -196,9 +205,17 @@ impl AutostartBackend for WindowsAutostart {
             let mut len = 0u32;
             let query_res =
                 RegQueryValueExW(hkey, APP_VALUE_NAME, None, None, None, Some(&mut len));
+            let legacy_res = RegQueryValueExW(
+                hkey,
+                LEGACY_APP_VALUE_NAME,
+                None,
+                None,
+                None,
+                Some(&mut len),
+            );
             let _ = RegCloseKey(hkey);
 
-            Ok(query_res.is_ok() && len > 0)
+            Ok((query_res.is_ok() || legacy_res.is_ok()) && len > 0)
         }
     }
 
@@ -219,9 +236,11 @@ impl AutostartBackend for WindowsAutostart {
                     utf16_units.len() * 2,
                 );
 
+                let _ = RegDeleteValueW(hkey, LEGACY_APP_VALUE_NAME);
                 RegSetValueExW(hkey, APP_VALUE_NAME, None, REG_SZ, Some(bytes)).ok()
             } else {
                 let _ = RegDeleteValueW(hkey, APP_VALUE_NAME);
+                let _ = RegDeleteValueW(hkey, LEGACY_APP_VALUE_NAME);
                 Ok(())
             };
 

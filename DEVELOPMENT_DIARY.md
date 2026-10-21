@@ -174,3 +174,30 @@
   - Compilato con successo `cargo build --release --bin vortexdeck` in **1m 33s** (0 errori, 0 warning).
   - Pacchetto assemblato in [`dist/VortexDeck/`](dist/VortexDeck) con `vortexdeck.exe` (17.5 MB), binario USB `ch57x-keyboard-tool.exe` e mapping di esempio.
   - Test diagnostico `--doctor` superato con successo: tastiera rilevata e driver `UsbDk` attivo.
+
+
+---
+
+### Sessione 15: Fix Luminosità Surface/Portatili, Toggle Autostart UI e Funzionamento Bluetooth / App Chiusa
+- **Data**: `2026-10-21`
+- **Motivazione**: Risoluzione delle limitazioni emerse nell'uso su laptop Windows / Microsoft Surface, aggiunta del controllo visivo dell'avvio con Windows ed esecuzione delle automazioni host (`agy`) sia via Bluetooth che ad app chiusa.
+- **Interventi Realizzati**:
+  1. **Motore Regolazione Luminosità a 2 Stadi (`ch57x-platform`)**:
+     - *Stadio 1 (Istantaneo, 0ms latency)*: Accesso diretto al dispositivo kernel `\\.\LCD` tramite `CreateFileW` e `DeviceIoControl` (`IOCTL_VIDEO_QUERY_DISPLAY_BRIGHTNESS` / `IOCTL_VIDEO_SET_DISPLAY_BRIGHTNESS`). Ottimizzato specificamente per display interni di Microsoft Surface e laptop.
+     - *Stadio 2 (Fallback)*: Worker background debounced con WMI `WmiSetBrightness` e GDI `SetDeviceGammaRamp`.
+     - *Preset & UI*: Rimosso l'uso errato dei token macOS `macbrightnessdown/up`; il preset manopola assegna ora azioni host `AdjustBrightness` (`delta: -6` CCW e `delta: +6` CW) con auto-allocazione dei trigger.
+  2. **Toggle Grafico "Avvio con Windows"**:
+     - Aggiunto nella Top Toolbar principale un pulsante toggle Liquid Glass dinamico (`● Avvio Win: ON` verde / `○ Avvio Win: OFF` grigio).
+     - Integrato nel menu contestuale della System Tray (`Avvio automatico con Windows (ON/OFF)`) e sincronizzato con la checkbox nel Doctor Panel.
+     - Gestione reale della chiave di registro `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` con valore `VortexDeck` e flag `--background`.
+  3. **Pool 60 Trigger BLE-Safe per Bluetooth e App Chiusa**:
+     - Sostituiti tutti i vecchi codici virtuali superiori a `0x65` (che venivano troncati dal firmware CH57x via Bluetooth) con 60 combinazioni con tasti standard (`F1..F11`, `0..9`, `A..Z`, `-`) su modificatori `Ctrl+Alt+Shift` e `Ctrl+Alt+Win`.
+     - Rimosso `MOD_NOREPEAT` sul thread Win32 Hotkey per consentire rotazione continua fluida delle manopole rotative.
+     - Generazione automatica di scorciatoie `.lnk` in `%APPDATA%\Microsoft\Windows\Start Menu\Programs\VortexDeck` tramite COM `IShellLinkW::SetHotkey`: Windows Explorer intercetta i trigger e lancia `agy` istantaneamente anche se VortexDeck è completamente terminato.
+     - Auto-salvataggio delle modifiche pendenti del profilo alla chiusura della finestra con la X rossa prima del passaggio a demone background.
+     - Badge di avviso nella Top Toolbar (`⚠️ Flash USB necessario per aggiornare il Bluetooth`) con apertura diretta del modal di conferma flashing.
+- **Esito Verifiche**:
+  - `cargo test --workspace`: **100% test superati (75 unit & integration tests)**.
+  - `cargo clippy --workspace --all-targets -- -D warnings`: **0 warning**.
+  - `cargo fmt --all -- --check`: **Formattazione conforme**.
+  - Compilazione Release e packaging `dist/VortexDeck/vortexdeck.exe` completati con successo.

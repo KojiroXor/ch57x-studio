@@ -44,7 +44,7 @@ Quando si seleziona una delle due manopole nell'Inspector, VortexDeck visualizza
 | Preset | CCW (Sinistra) | PRESS (Click) | CW (Destra) | Utilizzo Tipico |
 |---|---|---|---|---|
 | **Volume + Mute** | `volumedown` (Vol -) | `mute` (Mute) | `volumeup` (Vol +) | Regolazione audio di sistema con silenzioso rapido |
-| **Luminosità + Play** | `macbrightnessdown` (Lum -) | `play` (Play/Pausa) | `macbrightnessup` (Lum +) | Regolazione luminosità Surface/monitor e controllo multimediale |
+| **Luminosità + Play** | `ActionDefinition::AdjustBrightness` (-6%) | `play` (Play/Pausa) | `ActionDefinition::AdjustBrightness` (+6%) | Regolazione luminosità istantanea Microsoft Surface e laptop Windows (IOCTL `\\.\LCD` a 0ms + fallback WMI) e controllo multimediale |
 | **Zoom + Reset 100%** | `ctrl-minus` (Zoom -) | `ctrl-0` (100%) | `ctrl-equal` (Zoom +) | Zoom fluido in IDE (VSCode/Cursor), browser e visualizzatori CAD |
 | **Scorri Tab (IDE/Browser)** | `ctrl-shift-tab` (Tab SX) | `ctrl-w` (Chiudi Tab) | `ctrl-tab` (Tab DX) | Navigazione tra schede di lavoro e chiusura rapida |
 | **Undo / Redo / Salva** | `ctrl-z` (Undo) | `ctrl-s` (Salva) | `ctrl-y` (Redo) | Pipeline di editing continuo senza staccare le mani dalla tastiera |

@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 ch57x-domain = { workspace = true }
+ch57x-compiler = { workspace = true }
 ch57x-hardware = { workspace = true }
 ch57x-platform = { workspace = true }
 egui = { workspace = true }

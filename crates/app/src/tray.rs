@@ -16,6 +16,7 @@ use tracing::info;
 pub enum TrayAction {
     ShowWindow,
     TogglePause,
+    ToggleAutostart,
     ShowHud,
     Quit,
 }
@@ -99,8 +100,9 @@ mod windows_tray {
     const WM_TRAY_CALLBACK: u32 = WM_APP + 101;
     const ID_TRAY_OPEN: usize = 1001;
     const ID_TRAY_PAUSE: usize = 1002;
-    const ID_TRAY_HUD: usize = 1003;
-    const ID_TRAY_EXIT: usize = 1004;
+    const ID_TRAY_AUTOSTART: usize = 1003;
+    const ID_TRAY_HUD: usize = 1004;
+    const ID_TRAY_EXIT: usize = 1005;
 
     static GLOBAL_TRAY_SENDER: OnceLock<Sender<TrayAction>> = OnceLock::new();
     static REPAINT_CTX: OnceLock<egui::Context> = OnceLock::new();
@@ -212,6 +214,12 @@ mod windows_tray {
                         let _ = AppendMenuW(hmenu, MF_STRING, ID_TRAY_OPEN, w!("Apri VortexDeck"));
                         let _ =
                             AppendMenuW(hmenu, MF_STRING, ID_TRAY_PAUSE, w!("Pausa Automazioni"));
+                        let _ = AppendMenuW(
+                            hmenu,
+                            MF_STRING,
+                            ID_TRAY_AUTOSTART,
+                            w!("Avvio automatico con Windows (ON/OFF)"),
+                        );
                         let _ =
                             AppendMenuW(hmenu, MF_STRING, ID_TRAY_HUD, w!("Visualizza HUD OSD"));
                         let _ = AppendMenuW(hmenu, MF_SEPARATOR, 0, None);
@@ -250,6 +258,10 @@ mod windows_tray {
                         }
                         ID_TRAY_PAUSE => {
                             let _ = sender.send(TrayAction::TogglePause);
+                            notify_repaint();
+                        }
+                        ID_TRAY_AUTOSTART => {
+                            let _ = sender.send(TrayAction::ToggleAutostart);
                             notify_repaint();
                         }
                         ID_TRAY_HUD => {

@@ -698,6 +698,7 @@ dependencies = [
 name = "ch57x-ui"
 version = "0.1.0"
 dependencies = [
+ "ch57x-compiler",
  "ch57x-domain",
  "ch57x-hardware",
  "ch57x-platform",

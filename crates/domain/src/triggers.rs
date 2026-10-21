@@ -4,37 +4,127 @@ pub const TOTAL_TRIGGER_POOL_SIZE: usize = 60;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum TriggerBank {
-    BankA, // None + F13..F24 (0..=11)
-    BankB, // Ctrl + F13..F24 (12..=23)
-    BankC, // Shift + F13..F24 (24..=35)
-    BankD, // Alt + F13..F24 (36..=47)
-    BankE, // Ctrl+Shift + F13..F24 (48..=59)
+    BankA, // ctrl-alt-shift-f1..f11, 0 (0..=11)
+    BankB, // ctrl-alt-shift-1..9, a, b, c (12..=23)
+    BankC, // ctrl-alt-shift-d..o (24..=35)
+    BankD, // ctrl-alt-shift-p..z, minus (36..=47)
+    BankE, // ctrl-alt-win-f1..f11, 0 (48..=59)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct PhantomTrigger {
     pub bank: TriggerBank,
-    pub key_number: u8, // 13..=24
+    pub index: u8,      // 0..=11
+    pub key_number: u8, // 13..=24 per retro-compatibilità test
 }
 
 impl PhantomTrigger {
-    pub fn new(bank: TriggerBank, key_number: u8) -> Option<Self> {
-        if (13..=24).contains(&key_number) {
-            Some(Self { bank, key_number })
+    pub fn new(bank: TriggerBank, index_or_key: u8) -> Option<Self> {
+        let index = if index_or_key < 12 {
+            index_or_key
+        } else if (13..=24).contains(&index_or_key) {
+            index_or_key - 13
         } else {
-            None
+            return None;
+        };
+        Some(Self {
+            bank,
+            index,
+            key_number: 13 + index,
+        })
+    }
+
+    /// Ritorna il token del tasto base (es. "f1", "0", "1", "a", "minus")
+    pub fn key_token(&self) -> &'static str {
+        match self.bank {
+            TriggerBank::BankA => match self.index {
+                0 => "f1",
+                1 => "f2",
+                2 => "f3",
+                3 => "f4",
+                4 => "f5",
+                5 => "f6",
+                6 => "f7",
+                7 => "f8",
+                8 => "f9",
+                9 => "f10",
+                10 => "f11",
+                11 => "0",
+                _ => "f1",
+            },
+            TriggerBank::BankB => match self.index {
+                0 => "1",
+                1 => "2",
+                2 => "3",
+                3 => "4",
+                4 => "5",
+                5 => "6",
+                6 => "7",
+                7 => "8",
+                8 => "9",
+                9 => "a",
+                10 => "b",
+                11 => "c",
+                _ => "1",
+            },
+            TriggerBank::BankC => match self.index {
+                0 => "d",
+                1 => "e",
+                2 => "f",
+                3 => "g",
+                4 => "h",
+                5 => "i",
+                6 => "j",
+                7 => "k",
+                8 => "l",
+                9 => "m",
+                10 => "n",
+                11 => "o",
+                _ => "d",
+            },
+            TriggerBank::BankD => match self.index {
+                0 => "p",
+                1 => "q",
+                2 => "r",
+                3 => "s",
+                4 => "t",
+                5 => "u",
+                6 => "v",
+                7 => "w",
+                8 => "x",
+                9 => "y",
+                10 => "z",
+                11 => "minus",
+                _ => "p",
+            },
+            TriggerBank::BankE => match self.index {
+                0 => "f1",
+                1 => "f2",
+                2 => "f3",
+                3 => "f4",
+                4 => "f5",
+                5 => "f6",
+                6 => "f7",
+                7 => "f8",
+                8 => "f9",
+                9 => "f10",
+                10 => "f11",
+                11 => "0",
+                _ => "f1",
+            },
         }
     }
 
-    /// Ritorna la sintassi esatta attesa da ch57x-keyboard-tool (es. "f13", "ctrl-f13", "ctrl-shift-f24")
+    /// Ritorna la sintassi esatta attesa da ch57x-keyboard-tool (es. "ctrl-alt-shift-f1", "ctrl-alt-win-0")
     pub fn yaml_token(&self) -> String {
-        let key_str = format!("f{}", self.key_number);
+        let key = self.key_token();
         match self.bank {
-            TriggerBank::BankA => key_str,
-            TriggerBank::BankB => format!("ctrl-{}", key_str),
-            TriggerBank::BankC => format!("shift-{}", key_str),
-            TriggerBank::BankD => format!("alt-{}", key_str),
-            TriggerBank::BankE => format!("ctrl-shift-{}", key_str),
+            TriggerBank::BankA | TriggerBank::BankB | TriggerBank::BankC | TriggerBank::BankD => {
+                format!("ctrl-alt-shift-{}", key)
+            }
+            TriggerBank::BankE => {
+                format!("ctrl-alt-win-{}", key)
+            }
         }
     }
 
@@ -47,7 +137,7 @@ impl PhantomTrigger {
             TriggerBank::BankD => 36,
             TriggerBank::BankE => 48,
         };
-        base + (self.key_number - 13) as usize
+        base + (self.index as usize)
     }
 
     /// Ritorna il trigger dato l'indice nel pool 0..=59
@@ -65,6 +155,7 @@ impl PhantomTrigger {
         };
         Some(Self {
             bank,
+            index: offset as u8,
             key_number: (13 + offset) as u8,
         })
     }
@@ -98,7 +189,8 @@ mod tests {
             assert_eq!(trigger.pool_index(), idx);
             assert!(
                 unique_yaml.insert(trigger.yaml_token()),
-                "YAML tokens must be unique"
+                "YAML tokens must be unique: {}",
+                trigger.yaml_token()
             );
             assert!(
                 unique_indices.insert(trigger.pool_index()),
@@ -112,54 +204,74 @@ mod tests {
 
     #[test]
     fn test_trigger_banks() {
-        // Bank A: f13..f24
+        // Bank A: ctrl-alt-shift-f1..f11, 0
         assert_eq!(
             PhantomTrigger::from_pool_index(0).unwrap().yaml_token(),
-            "f13"
+            "ctrl-alt-shift-f1"
+        );
+        assert_eq!(
+            PhantomTrigger::from_pool_index(10).unwrap().yaml_token(),
+            "ctrl-alt-shift-f11"
         );
         assert_eq!(
             PhantomTrigger::from_pool_index(11).unwrap().yaml_token(),
-            "f24"
+            "ctrl-alt-shift-0"
         );
 
-        // Bank B: ctrl-f13..ctrl-f24
+        // Bank B: ctrl-alt-shift-1..9, a, b, c
         assert_eq!(
             PhantomTrigger::from_pool_index(12).unwrap().yaml_token(),
-            "ctrl-f13"
+            "ctrl-alt-shift-1"
+        );
+        assert_eq!(
+            PhantomTrigger::from_pool_index(20).unwrap().yaml_token(),
+            "ctrl-alt-shift-9"
+        );
+        assert_eq!(
+            PhantomTrigger::from_pool_index(21).unwrap().yaml_token(),
+            "ctrl-alt-shift-a"
         );
         assert_eq!(
             PhantomTrigger::from_pool_index(23).unwrap().yaml_token(),
-            "ctrl-f24"
+            "ctrl-alt-shift-c"
         );
 
-        // Bank C: shift-f13..shift-f24
+        // Bank C: ctrl-alt-shift-d..o
         assert_eq!(
             PhantomTrigger::from_pool_index(24).unwrap().yaml_token(),
-            "shift-f13"
+            "ctrl-alt-shift-d"
         );
         assert_eq!(
             PhantomTrigger::from_pool_index(35).unwrap().yaml_token(),
-            "shift-f24"
+            "ctrl-alt-shift-o"
         );
 
-        // Bank D: alt-f13..alt-f24
+        // Bank D: ctrl-alt-shift-p..z, minus
         assert_eq!(
             PhantomTrigger::from_pool_index(36).unwrap().yaml_token(),
-            "alt-f13"
+            "ctrl-alt-shift-p"
+        );
+        assert_eq!(
+            PhantomTrigger::from_pool_index(46).unwrap().yaml_token(),
+            "ctrl-alt-shift-z"
         );
         assert_eq!(
             PhantomTrigger::from_pool_index(47).unwrap().yaml_token(),
-            "alt-f24"
+            "ctrl-alt-shift-minus"
         );
 
-        // Bank E: ctrl-shift-f13..ctrl-shift-f24
+        // Bank E: ctrl-alt-win-f1..f11, 0
         assert_eq!(
             PhantomTrigger::from_pool_index(48).unwrap().yaml_token(),
-            "ctrl-shift-f13"
+            "ctrl-alt-win-f1"
+        );
+        assert_eq!(
+            PhantomTrigger::from_pool_index(58).unwrap().yaml_token(),
+            "ctrl-alt-win-f11"
         );
         assert_eq!(
             PhantomTrigger::from_pool_index(59).unwrap().yaml_token(),
-            "ctrl-shift-f24"
+            "ctrl-alt-win-0"
         );
     }
 }

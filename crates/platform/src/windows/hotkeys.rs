@@ -9,8 +9,9 @@ use std::thread::{self, JoinHandle};
 use windows::Win32::Foundation::{BOOL, LPARAM, WPARAM};
 use windows::Win32::System::Threading::GetCurrentThreadId;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    RegisterHotKey, UnregisterHotKey, HOT_KEY_MODIFIERS, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT,
-    MOD_SHIFT, VIRTUAL_KEY, VK_F13,
+    RegisterHotKey, UnregisterHotKey, HOT_KEY_MODIFIERS, MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN,
+    VIRTUAL_KEY, VK_F1, VK_F10, VK_F11, VK_F2, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7, VK_F8, VK_F9,
+    VK_OEM_MINUS,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetMessageW, PeekMessageW, PostQuitMessage, PostThreadMessageW, MSG, PM_NOREMOVE, WM_HOTKEY,
@@ -52,14 +53,64 @@ fn broadcast_hotkey_event(trigger: PhantomTrigger) {
 }
 
 /// Converts a PhantomTrigger to Win32 modifiers and Virtual Key code.
+/// Rimosso MOD_NOREPEAT per consentire ripetizione fluida su rotazione continua manopole.
 pub fn trigger_to_win32(trigger: &PhantomTrigger) -> (HOT_KEY_MODIFIERS, VIRTUAL_KEY) {
-    let vk = VIRTUAL_KEY(VK_F13.0 + (trigger.key_number - 13) as u16);
+    let vk = match trigger.key_token() {
+        "f1" => VK_F1,
+        "f2" => VK_F2,
+        "f3" => VK_F3,
+        "f4" => VK_F4,
+        "f5" => VK_F5,
+        "f6" => VK_F6,
+        "f7" => VK_F7,
+        "f8" => VK_F8,
+        "f9" => VK_F9,
+        "f10" => VK_F10,
+        "f11" => VK_F11,
+        "0" => VIRTUAL_KEY(0x30),
+        "1" => VIRTUAL_KEY(0x31),
+        "2" => VIRTUAL_KEY(0x32),
+        "3" => VIRTUAL_KEY(0x33),
+        "4" => VIRTUAL_KEY(0x34),
+        "5" => VIRTUAL_KEY(0x35),
+        "6" => VIRTUAL_KEY(0x36),
+        "7" => VIRTUAL_KEY(0x37),
+        "8" => VIRTUAL_KEY(0x38),
+        "9" => VIRTUAL_KEY(0x39),
+        "a" => VIRTUAL_KEY(0x41),
+        "b" => VIRTUAL_KEY(0x42),
+        "c" => VIRTUAL_KEY(0x43),
+        "d" => VIRTUAL_KEY(0x44),
+        "e" => VIRTUAL_KEY(0x45),
+        "f" => VIRTUAL_KEY(0x46),
+        "g" => VIRTUAL_KEY(0x47),
+        "h" => VIRTUAL_KEY(0x48),
+        "i" => VIRTUAL_KEY(0x49),
+        "j" => VIRTUAL_KEY(0x4A),
+        "k" => VIRTUAL_KEY(0x4B),
+        "l" => VIRTUAL_KEY(0x4C),
+        "m" => VIRTUAL_KEY(0x4D),
+        "n" => VIRTUAL_KEY(0x4E),
+        "o" => VIRTUAL_KEY(0x4F),
+        "p" => VIRTUAL_KEY(0x50),
+        "q" => VIRTUAL_KEY(0x51),
+        "r" => VIRTUAL_KEY(0x52),
+        "s" => VIRTUAL_KEY(0x53),
+        "t" => VIRTUAL_KEY(0x54),
+        "u" => VIRTUAL_KEY(0x55),
+        "v" => VIRTUAL_KEY(0x56),
+        "w" => VIRTUAL_KEY(0x57),
+        "x" => VIRTUAL_KEY(0x58),
+        "y" => VIRTUAL_KEY(0x59),
+        "z" => VIRTUAL_KEY(0x5A),
+        "minus" => VK_OEM_MINUS,
+        _ => VK_F1,
+    };
     let mods = match trigger.bank {
-        TriggerBank::BankA => MOD_NOREPEAT,
-        TriggerBank::BankB => MOD_CONTROL | MOD_NOREPEAT,
-        TriggerBank::BankC => MOD_SHIFT | MOD_NOREPEAT,
-        TriggerBank::BankD => MOD_ALT | MOD_NOREPEAT,
-        TriggerBank::BankE => MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT,
+        TriggerBank::BankA | TriggerBank::BankB | TriggerBank::BankC | TriggerBank::BankD => {
+            MOD_CONTROL | MOD_ALT | MOD_SHIFT
+        }
+        TriggerBank::BankE => MOD_CONTROL | MOD_ALT | MOD_WIN,
     };
     (mods, vk)
 }

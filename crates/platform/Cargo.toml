@@ -15,6 +15,11 @@ tracing = { workspace = true }
 windows = { workspace = true, features = [
     "Win32_Security",
     "Win32_System_Registry",
+    "Win32_System_Com",
+    "Win32_System_IO",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Ioctl",
+    "Win32_UI_Shell",
 ] }
 
 [target.'cfg(target_os = "linux")'.dependencies]

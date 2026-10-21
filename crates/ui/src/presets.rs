@@ -68,15 +68,15 @@ pub const ENCODER_PRESETS: &[EncoderPresetDef] = &[
     EncoderPresetDef {
         id: "lum_play",
         title: "Luminosità + Play",
-        description: "SX = Riduci Lum | Click = Play/Pausa | DX = Aumenta Lum",
+        description: "SX = Riduci Lum (-6%) | Click = Play/Pausa | DX = Aumenta Lum (+6%)",
         ccw_label: "Lum -",
         press_label: "Play/Pausa",
         cw_label: "Lum +",
         make_bindings: || {
             (
-                SlotBinding::HidNative(HidAction::ConsumerMedia(MediaToken::BrightnessDown)),
+                SlotBinding::Disabled,
                 SlotBinding::HidNative(HidAction::ConsumerMedia(MediaToken::PlayPause)),
-                SlotBinding::HidNative(HidAction::ConsumerMedia(MediaToken::BrightnessUp)),
+                SlotBinding::Disabled,
             )
         },
     },
@@ -228,10 +228,10 @@ pub fn apply_encoder_preset(
         let action_cw = ActionId::new_v4();
         profile
             .actions
-            .insert(action_ccw, ActionDefinition::AdjustBrightness { delta: -5 });
+            .insert(action_ccw, ActionDefinition::AdjustBrightness { delta: -6 });
         profile
             .actions
-            .insert(action_cw, ActionDefinition::AdjustBrightness { delta: 5 });
+            .insert(action_cw, ActionDefinition::AdjustBrightness { delta: 6 });
         (
             SlotBinding::HostActionRef(action_ccw),
             SlotBinding::HidNative(HidAction::ConsumerMedia(MediaToken::PlayPause)),
@@ -253,6 +253,8 @@ pub fn apply_encoder_preset(
         cfg.binding = cw_b;
         cfg.label = preset.cw_label.to_string();
     }
+
+    let _ = ch57x_compiler::allocator::allocate_triggers(profile);
 }
 
 // ============================================================================

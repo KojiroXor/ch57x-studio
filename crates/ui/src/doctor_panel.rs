@@ -66,13 +66,9 @@ impl DoctorPanel {
         state: &mut UiState,
         platform: Option<&dyn PlatformBackend>,
     ) {
-        if !self.initialized_autostart {
-            if let Some(p) = platform {
-                if let Ok(en) = p.autostart().is_enabled() {
-                    self.autostart_enabled = en;
-                    self.initialized_autostart = true;
-                }
-            }
+        if let Some(p) = platform {
+            self.autostart_enabled = p.is_autostart_enabled();
+            self.initialized_autostart = true;
         }
 
         egui::ScrollArea::vertical().show(ui, |ui| {

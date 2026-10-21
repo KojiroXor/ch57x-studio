@@ -11,6 +11,96 @@ static CURRENT_BRIGHTNESS: AtomicI32 = AtomicI32::new(-1);
 static INIT_ONCE: Once = Once::new();
 static mut SENDER: Option<Sender<i32>> = None;
 
+#[repr(C)]
+#[derive(Default, Clone, Copy, Debug)]
+struct DisplayBrightness {
+    uc_display_policy: u8,
+    uc_ac_brightness: u8,
+    uc_dc_brightness: u8,
+}
+
+fn try_ioctl_lcd_brightness(delta: i32) -> Option<u32> {
+    #[cfg(target_os = "windows")]
+    unsafe {
+        use windows::core::w;
+        use windows::Win32::Foundation::{CloseHandle, GENERIC_READ, GENERIC_WRITE};
+        use windows::Win32::Storage::FileSystem::{
+            CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+        };
+        use windows::Win32::System::IO::DeviceIoControl;
+
+        const IOCTL_VIDEO_QUERY_DISPLAY_BRIGHTNESS: u32 = 0x00230498;
+        const IOCTL_VIDEO_SET_DISPLAY_BRIGHTNESS: u32 = 0x0023049C;
+
+        let handle = CreateFileW(
+            w!("\\\\.\\LCD"),
+            GENERIC_READ.0 | GENERIC_WRITE.0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            None,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            None,
+        )
+        .ok()?;
+
+        if handle.is_invalid() {
+            return None;
+        }
+
+        let mut current_b = DisplayBrightness::default();
+        let mut bytes_returned = 0u32;
+        let query_ok = DeviceIoControl(
+            handle,
+            IOCTL_VIDEO_QUERY_DISPLAY_BRIGHTNESS,
+            None,
+            0,
+            Some(&mut current_b as *mut _ as *mut _),
+            std::mem::size_of::<DisplayBrightness>() as u32,
+            Some(&mut bytes_returned),
+            None,
+        );
+
+        if query_ok.is_err() {
+            let _ = CloseHandle(handle);
+            return None;
+        }
+
+        let cur_val = current_b.uc_ac_brightness.max(current_b.uc_dc_brightness);
+        let new_val = (cur_val as i32 + delta).clamp(0, 100) as u8;
+
+        let mut new_b = DisplayBrightness {
+            uc_display_policy: current_b.uc_display_policy,
+            uc_ac_brightness: new_val,
+            uc_dc_brightness: new_val,
+        };
+
+        let set_ok = DeviceIoControl(
+            handle,
+            IOCTL_VIDEO_SET_DISPLAY_BRIGHTNESS,
+            Some(&mut new_b as *mut _ as *const _),
+            std::mem::size_of::<DisplayBrightness>() as u32,
+            None,
+            0,
+            Some(&mut bytes_returned),
+            None,
+        );
+
+        let _ = CloseHandle(handle);
+
+        if set_ok.is_ok() {
+            CURRENT_BRIGHTNESS.store(new_val as i32, Ordering::SeqCst);
+            Some(new_val as u32)
+        } else {
+            None
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = delta;
+        None
+    }
+}
+
 fn init_brightness_worker() {
     INIT_ONCE.call_once(|| {
         let (tx, rx) = channel::<i32>();
@@ -40,6 +130,12 @@ fn init_brightness_worker() {
 }
 
 pub fn adjust_brightness(delta: i32) -> Result<u32, PlatformError> {
+    // Stadio 1: Diretto e istantaneo in < 1ms via driver kernel \\.\LCD (Surface e laptop Windows)
+    if let Some(level) = try_ioctl_lcd_brightness(delta) {
+        return Ok(level);
+    }
+
+    // Stadio 2: Fallback WMI e Gamma Ramp debounced in background (Desktop / Monitor esterni)
     init_brightness_worker();
 
     let cur = CURRENT_BRIGHTNESS.load(Ordering::SeqCst);

@@ -190,6 +190,7 @@ impl InspectorPanel {
 
                         if ui.add(confirm_btn).clicked() {
                             (template.apply)(&mut state.profile, state.editing_layer);
+                            let _ = ch57x_compiler::allocator::allocate_triggers(&mut state.profile);
                             state.mark_dirty();
                             state.pending_layer_template_confirm = None;
                             state.set_status(
@@ -226,6 +227,7 @@ impl InspectorPanel {
                             state.pending_layer_template_confirm = Some(template.id);
                         } else {
                             (template.apply)(&mut state.profile, state.editing_layer);
+                            let _ = ch57x_compiler::allocator::allocate_triggers(&mut state.profile);
                             state.mark_dirty();
                             state.set_status(
                                 format!(
@@ -409,6 +411,7 @@ impl InspectorPanel {
                             index,
                             preset,
                         );
+                        let _ = ch57x_compiler::allocator::allocate_triggers(&mut state.profile);
                         state.mark_dirty();
                         state.set_status(
                             format!(
@@ -447,6 +450,7 @@ impl InspectorPanel {
 
                     if ui.add(chip).on_hover_text(preset.description).clicked() {
                         (preset.apply)(&mut state.profile, slot.global_index());
+                        let _ = ch57x_compiler::allocator::allocate_triggers(&mut state.profile);
                         state.mark_dirty();
                         state.set_status(
                             format!("Tasto configurato con preset '{}'.", preset.title),
@@ -638,9 +642,11 @@ impl InspectorPanel {
                     state.get_action_for_slot_mut(slot)
                 {
                     ui.label(
-                        egui::RichText::new("Regolazione Luminosità Monitor (Windows WMI/Gamma):")
-                            .font(FontId::proportional(11.5))
-                            .color(COLOR_TEXT_PRIMARY),
+                        egui::RichText::new(
+                            "Regolazione Luminosità Monitor (Surface/Laptop IOCTL & WMI):",
+                        )
+                        .font(FontId::proportional(11.5))
+                        .color(COLOR_TEXT_PRIMARY),
                     );
                     ui.add_space(4.0);
 
@@ -667,12 +673,12 @@ impl InspectorPanel {
                                     *delta = val;
                                     marked_dirty = true;
                                 }
-                                if ui.button("+5%").clicked() {
-                                    *delta = 5;
+                                if ui.button("+6%").clicked() {
+                                    *delta = 6;
                                     marked_dirty = true;
                                 }
-                                if ui.button("-5%").clicked() {
-                                    *delta = -5;
+                                if ui.button("-6%").clicked() {
+                                    *delta = -6;
                                     marked_dirty = true;
                                 }
                             });
@@ -787,14 +793,6 @@ impl InspectorPanel {
                         (MediaToken::NextSong, "Traccia Successiva"),
                         (MediaToken::PrevSong, "Traccia Precedente"),
                         (MediaToken::Stop, "Stop Riproduzione"),
-                        (
-                            MediaToken::BrightnessUp,
-                            "Aumenta Luminosità (Brightness Up)",
-                        ),
-                        (
-                            MediaToken::BrightnessDown,
-                            "Riduci Luminosità (Brightness Down)",
-                        ),
                     ];
 
                     ui.label(egui::RichText::new("Comando Media:").color(COLOR_TEXT_SECONDARY));
