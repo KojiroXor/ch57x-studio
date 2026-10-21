@@ -13,6 +13,9 @@ pub use traits::*;
 #[cfg(target_os = "windows")]
 pub use windows::WindowsPlatform as CurrentPlatform;
 
+#[cfg(target_os = "windows")]
+pub use windows::windows_api::{get_startup_lnk_path, is_autostart_enabled, set_autostart_enabled};
+
 #[cfg(target_os = "linux")]
 pub use linux::LinuxPlatform as CurrentPlatform;
 
@@ -153,6 +156,52 @@ mod tests {
         let platform = get_platform();
         let enabled = platform.autostart().is_enabled();
         assert!(enabled.is_ok());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_win32_autostart_full_lifecycle() {
+        let platform = get_platform();
+
+        // 1. Abilita autostart
+        let set_res = platform.window_manager().set_autostart_enabled(true);
+        assert!(
+            set_res.is_ok(),
+            "set_autostart_enabled(true) should succeed: {:?}",
+            set_res
+        );
+
+        // 2. Verifica presenza .lnk e chiave registro tramite is_autostart_enabled
+        let enabled = platform.is_autostart_enabled();
+        assert!(
+            enabled,
+            "is_autostart_enabled should return true after enable"
+        );
+        assert!(platform.window_manager().is_autostart_enabled());
+
+        if let Some(lnk_path) = crate::get_startup_lnk_path() {
+            assert!(lnk_path.exists(), "Startup .lnk file must exist");
+        }
+
+        // 3. Disabilita autostart
+        let unset_res = platform.window_manager().set_autostart_enabled(false);
+        assert!(
+            unset_res.is_ok(),
+            "set_autostart_enabled(false) should succeed: {:?}",
+            unset_res
+        );
+
+        // 4. Verifica disattivazione
+        let disabled = platform.is_autostart_enabled();
+        assert!(
+            !disabled,
+            "is_autostart_enabled should return false after disable"
+        );
+        assert!(!platform.window_manager().is_autostart_enabled());
+
+        if let Some(lnk_path) = crate::get_startup_lnk_path() {
+            assert!(!lnk_path.exists(), "Startup .lnk file must be removed");
+        }
     }
 
     #[cfg(target_os = "windows")]

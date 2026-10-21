@@ -245,24 +245,31 @@ impl DoctorPanel {
                         if ui
                             .checkbox(
                                 &mut autostart,
-                                egui::RichText::new("Avvia VortexDeck automaticamente all'avvio di Windows")
-                                    .strong()
-                                    .color(COLOR_TEXT_PRIMARY),
+                                egui::RichText::new(
+                                    "Avvia VortexDeck automaticamente all'avvio di Windows",
+                                )
+                                .strong()
+                                .color(COLOR_TEXT_PRIMARY),
                             )
                             .changed()
                         {
                             self.autostart_enabled = autostart;
                             if let Some(p) = platform {
-                                if let Ok(exe) = std::env::current_exe() {
-                                    let _ = p.autostart().set_enabled(autostart, &exe);
-                                    if autostart {
+                                if let Err(e) = p.set_autostart_enabled(autostart) {
+                                    state.set_status(
+                                        format!("Errore modifica Avvio Automatico: {}", e),
+                                        StatusLevel::Error,
+                                    );
+                                } else {
+                                    self.autostart_enabled = p.is_autostart_enabled();
+                                    if self.autostart_enabled {
                                         state.set_status(
-                                            "Avvio con Windows abilitato (HKCU Run).",
+                                            "Avvio automatico con Windows ATTIVATO (partirà in background all'accensione).",
                                             StatusLevel::Success,
                                         );
                                     } else {
                                         state.set_status(
-                                            "Avvio con Windows disabilitato.",
+                                            "Avvio automatico con Windows DISATTIVATO.",
                                             StatusLevel::Info,
                                         );
                                     }

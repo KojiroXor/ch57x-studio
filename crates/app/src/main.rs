@@ -22,6 +22,13 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Forza sempre la working directory nella cartella dell'eseguibile (fondamentale per l'avvio automatico con Windows!)
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            let _ = std::env::set_current_dir(exe_dir);
+        }
+    }
+
     tracing_subscriber::fmt::init();
 
     let args: Vec<String> = env::args().collect();
@@ -84,8 +91,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tray = TrayHandle::new();
 
     if is_background {
+        let _tray_handle = &tray;
         loop {
-            while let Ok(action) = tray.receiver.try_recv() {
+            while let Ok(action) = _tray_handle.receiver.try_recv() {
                 match action {
                     TrayAction::ShowWindow => {
                         #[cfg(target_os = "windows")]
@@ -110,11 +118,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .send(CoordinatorCommand::TogglePause)?;
                     }
                     TrayAction::ToggleAutostart => {
-                        let current = coordinator.platform.is_autostart_enabled();
-                        let _ = coordinator.platform.set_autostart_enabled(!current);
+                        coordinator.toggle_autostart();
                     }
                     TrayAction::ShowHud => {}
-                    TrayAction::Quit => return Ok(()),
+                    TrayAction::Quit => {
+                        drop(tray);
+                        std::process::exit(0);
+                    }
                 }
             }
             coordinator.process_pending_commands();
@@ -186,22 +196,16 @@ impl eframe::App for VortexDeckApp {
                         .send(CoordinatorCommand::TogglePause);
                 }
                 TrayAction::ToggleAutostart => {
-                    let current = self.coordinator.platform.is_autostart_enabled();
-                    let new_state = !current;
-                    if let Err(e) = self.coordinator.platform.set_autostart_enabled(new_state) {
-                        self.coordinator
-                            .ui_state
-                            .set_status(format!("Errore autostart: {e}"), StatusLevel::Error);
+                    self.coordinator.autostart_enabled =
+                        self.coordinator.platform.is_autostart_enabled();
+                    let msg = if self.coordinator.autostart_enabled {
+                        "Avvio automatico con Windows ATTIVATO (partirà in background all'accensione)."
                     } else {
-                        let msg = if new_state {
-                            "Avvio con Windows ABILITATO (HKCU Run)."
-                        } else {
-                            "Avvio con Windows DISABILITATO."
-                        };
-                        self.coordinator
-                            .ui_state
-                            .set_status(msg, StatusLevel::Success);
-                    }
+                        "Avvio automatico con Windows DISATTIVATO."
+                    };
+                    self.coordinator
+                        .ui_state
+                        .set_status(msg, StatusLevel::Success);
                 }
                 TrayAction::ShowHud => {
                     self.hud_dismiss_at = Some(Instant::now() + Duration::from_millis(1500));
@@ -211,8 +215,7 @@ impl eframe::App for VortexDeckApp {
                     if self.coordinator.ui_state.is_dirty {
                         self.coordinator.save_active_profile();
                     }
-                    self.is_quitting = true;
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    std::process::exit(0);
                 }
             }
         }
@@ -333,54 +336,42 @@ impl eframe::App for VortexDeckApp {
                         }
 
                         // Toggle Avvio con Windows (ON/OFF)
-                        let autostart_on = self.coordinator.platform.is_autostart_enabled();
-                        let (autostart_text, autostart_bg, autostart_fg, autostart_stroke, autostart_tip) =
-                            if autostart_on {
-                                (
-                                    "● Avvio Win: ON",
-                                    Color32::from_rgba_premultiplied(18, 55, 30, 220),
-                                    COLOR_APPLE_GREEN,
-                                    Stroke::new(1.0_f32, COLOR_APPLE_GREEN),
-                                    "VortexDeck si avvia automaticamente in background con Windows. Clicca per disattivare.",
-                                )
-                            } else {
-                                (
-                                    "○ Avvio Win: OFF",
-                                    COLOR_CONTROL_INACTIVE,
-                                    COLOR_TEXT_SECONDARY,
-                                    Stroke::new(1.0_f32, COLOR_BORDER_SUBTLE),
-                                    "Clicca per avviare automaticamente VortexDeck all'accensione di Windows.",
-                                )
-                            };
+                        let is_auto = self.coordinator.autostart_enabled;
+                        let (auto_text, auto_fill, auto_stroke, auto_text_col) = if is_auto {
+                            (
+                                "Avvio Win: ON",
+                                Color32::from_rgba_unmultiplied(48, 209, 88, 38),
+                                Stroke::new(1.0_f32, COLOR_APPLE_GREEN),
+                                COLOR_APPLE_GREEN,
+                            )
+                        } else {
+                            (
+                                "Avvio Win: OFF",
+                                COLOR_CONTROL_INACTIVE,
+                                Stroke::new(1.0_f32, COLOR_BORDER_SUBTLE),
+                                COLOR_TEXT_SECONDARY,
+                            )
+                        };
 
-                        let autostart_btn = egui::Button::new(
-                            egui::RichText::new(autostart_text)
+                        let auto_btn = egui::Button::new(
+                            egui::RichText::new(auto_text)
                                 .font(FontId::proportional(11.5))
                                 .strong()
-                                .color(autostart_fg),
+                                .color(auto_text_col),
                         )
-                        .fill(autostart_bg)
-                        .stroke(autostart_stroke)
+                        .fill(auto_fill)
+                        .stroke(auto_stroke)
                         .rounding(Rounding::same(8.0))
                         .min_size(vec2(0.0, 28.0));
 
-                        if ui.add(autostart_btn).on_hover_text(autostart_tip).clicked() {
-                            let new_state = !autostart_on;
-                            if let Err(e) =
-                                self.coordinator.platform.set_autostart_enabled(new_state)
-                            {
-                                self.coordinator.ui_state.set_status(
-                                    format!("Errore autostart: {e}"),
-                                    StatusLevel::Error,
-                                );
-                            } else {
-                                let msg = if new_state {
-                                    "Avvio con Windows ABILITATO (HKCU Run)."
-                                } else {
-                                    "Avvio con Windows DISABILITATO."
-                                };
-                                self.coordinator.ui_state.set_status(msg, StatusLevel::Success);
-                            }
+                        if ui
+                            .add(auto_btn)
+                            .on_hover_text(
+                                "Attiva o disattiva l'avvio automatico di VortexDeck in background all'accensione di Windows.",
+                            )
+                            .clicked()
+                        {
+                            self.coordinator.toggle_autostart();
                         }
 
                         // Badge di avviso se è necessario il Flash USB per aggiornare il firmware / BLE

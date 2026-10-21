@@ -467,3 +467,218 @@ pub fn execute_launch_or_place(
         })
     }
 }
+
+pub fn get_startup_lnk_path() -> Option<PathBuf> {
+    std::env::var_os("APPDATA").map(|appdata| {
+        PathBuf::from(appdata)
+            .join("Microsoft")
+            .join("Windows")
+            .join("Start Menu")
+            .join("Programs")
+            .join("Startup")
+            .join("VortexDeck.lnk")
+    })
+}
+
+pub fn is_autostart_enabled() -> bool {
+    // 1. Controlla presenza file .lnk nella cartella Startup
+    if let Some(lnk_path) = get_startup_lnk_path() {
+        if lnk_path.exists() {
+            return true;
+        }
+    }
+
+    // 2. Controlla chiave di registro HKCU Run
+    unsafe {
+        use windows::core::{w, PCWSTR};
+        use windows::Win32::System::Registry::{
+            RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY, HKEY_CURRENT_USER, KEY_READ,
+        };
+
+        const RUN_KEY_PATH: PCWSTR = w!("Software\\Microsoft\\Windows\\CurrentVersion\\Run");
+        const APP_VALUE_NAME: PCWSTR = w!("VortexDeck");
+        const LEGACY_APP_VALUE_NAME: PCWSTR = w!("CH57xStudio");
+
+        let mut hkey = HKEY::default();
+        if RegOpenKeyExW(HKEY_CURRENT_USER, RUN_KEY_PATH, None, KEY_READ, &mut hkey).is_ok() {
+            let mut len = 0u32;
+            let query_res =
+                RegQueryValueExW(hkey, APP_VALUE_NAME, None, None, None, Some(&mut len));
+            let legacy_res = RegQueryValueExW(
+                hkey,
+                LEGACY_APP_VALUE_NAME,
+                None,
+                None,
+                None,
+                Some(&mut len),
+            );
+            let _ = RegCloseKey(hkey);
+
+            if (query_res.is_ok() || legacy_res.is_ok()) && len > 0 {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+pub fn set_autostart_enabled(enabled: bool) -> Result<(), PlatformError> {
+    unsafe {
+        use windows::core::{w, Interface, PCWSTR};
+        use windows::Win32::System::Com::{
+            CoCreateInstance, CoInitializeEx, CoUninitialize, IPersistFile, CLSCTX_INPROC_SERVER,
+            COINIT_APARTMENTTHREADED,
+        };
+        use windows::Win32::System::Registry::{
+            RegCloseKey, RegCreateKeyExW, RegDeleteValueW, RegOpenKeyExW, RegSetValueExW, HKEY,
+            HKEY_CURRENT_USER, KEY_READ, KEY_WRITE, REG_OPEN_CREATE_OPTIONS, REG_SZ,
+        };
+        use windows::Win32::UI::Shell::{IShellLinkW, ShellLink};
+
+        const RUN_KEY_PATH: PCWSTR = w!("Software\\Microsoft\\Windows\\CurrentVersion\\Run");
+        const STARTUP_APPROVED_PATH: PCWSTR =
+            w!("Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run");
+        const APP_VALUE_NAME: PCWSTR = w!("VortexDeck");
+        const LEGACY_APP_VALUE_NAME: PCWSTR = w!("CH57xStudio");
+
+        let exe = std::env::current_exe().map_err(|e| PlatformError::SystemApi(e.to_string()))?;
+
+        if enabled {
+            // 1. Scrittura Chiave Registro HKCU\Software\Microsoft\Windows\CurrentVersion\Run
+            let mut hkey = HKEY::default();
+            let mut disp = windows::Win32::System::Registry::REG_CREATE_KEY_DISPOSITION::default();
+            let reg_create_res = RegCreateKeyExW(
+                HKEY_CURRENT_USER,
+                RUN_KEY_PATH,
+                Some(0),
+                None,
+                REG_OPEN_CREATE_OPTIONS(0),
+                KEY_READ | KEY_WRITE,
+                None,
+                &mut hkey,
+                Some(&mut disp),
+            );
+
+            let opened_hkey = if reg_create_res.is_ok() {
+                Some(hkey)
+            } else {
+                let mut fallback_hkey = HKEY::default();
+                if RegOpenKeyExW(
+                    HKEY_CURRENT_USER,
+                    RUN_KEY_PATH,
+                    None,
+                    KEY_WRITE,
+                    &mut fallback_hkey,
+                )
+                .is_ok()
+                {
+                    Some(fallback_hkey)
+                } else {
+                    None
+                }
+            };
+
+            if let Some(hkey) = opened_hkey {
+                let cmd = format!("\"{}\" --background\0", exe.to_string_lossy());
+                let wide: Vec<u16> = cmd.encode_utf16().collect();
+                let bytes = std::slice::from_raw_parts(wide.as_ptr() as *const u8, wide.len() * 2);
+
+                let _ = RegDeleteValueW(hkey, LEGACY_APP_VALUE_NAME);
+                let _ = RegSetValueExW(hkey, APP_VALUE_NAME, None, REG_SZ, Some(bytes));
+                let _ = RegCloseKey(hkey);
+            }
+
+            // 2. Sblocco StartupApproved\Run di Windows 11
+            let mut approved_hkey = HKEY::default();
+            if RegOpenKeyExW(
+                HKEY_CURRENT_USER,
+                STARTUP_APPROVED_PATH,
+                None,
+                KEY_WRITE,
+                &mut approved_hkey,
+            )
+            .is_ok()
+            {
+                let _ = RegDeleteValueW(approved_hkey, APP_VALUE_NAME);
+                let _ = RegDeleteValueW(approved_hkey, LEGACY_APP_VALUE_NAME);
+                let _ = RegCloseKey(approved_hkey);
+            }
+
+            // 3. Creazione Collegamento .lnk in Startup
+            if let Some(lnk_path) = get_startup_lnk_path() {
+                if let Some(parent) = lnk_path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+
+                let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+                if let Ok(shell_link) =
+                    CoCreateInstance::<_, IShellLinkW>(&ShellLink, None, CLSCTX_INPROC_SERVER)
+                {
+                    let exe_wide: Vec<u16> = exe
+                        .to_string_lossy()
+                        .encode_utf16()
+                        .chain(std::iter::once(0))
+                        .collect();
+                    let _ = shell_link.SetPath(PCWSTR(exe_wide.as_ptr()));
+
+                    let args_wide: Vec<u16> = "--background\0".encode_utf16().collect();
+                    let _ = shell_link.SetArguments(PCWSTR(args_wide.as_ptr()));
+
+                    if let Some(parent) = exe.parent() {
+                        let wd_wide: Vec<u16> = parent
+                            .to_string_lossy()
+                            .encode_utf16()
+                            .chain(std::iter::once(0))
+                            .collect();
+                        let _ = shell_link.SetWorkingDirectory(PCWSTR(wd_wide.as_ptr()));
+                    }
+
+                    if let Ok(persist_file) = shell_link.cast::<IPersistFile>() {
+                        let lnk_wide: Vec<u16> = lnk_path
+                            .to_string_lossy()
+                            .encode_utf16()
+                            .chain(std::iter::once(0))
+                            .collect();
+                        let _ = persist_file.Save(PCWSTR(lnk_wide.as_ptr()), true);
+                    }
+                }
+                CoUninitialize();
+            }
+        } else {
+            // Disabilitazione
+            // 1. Rimuovi valore Run
+            let mut hkey = HKEY::default();
+            if RegOpenKeyExW(HKEY_CURRENT_USER, RUN_KEY_PATH, None, KEY_WRITE, &mut hkey).is_ok() {
+                let _ = RegDeleteValueW(hkey, APP_VALUE_NAME);
+                let _ = RegDeleteValueW(hkey, LEGACY_APP_VALUE_NAME);
+                let _ = RegCloseKey(hkey);
+            }
+
+            // 2. Rimuovi valore StartupApproved
+            let mut approved_hkey = HKEY::default();
+            if RegOpenKeyExW(
+                HKEY_CURRENT_USER,
+                STARTUP_APPROVED_PATH,
+                None,
+                KEY_WRITE,
+                &mut approved_hkey,
+            )
+            .is_ok()
+            {
+                let _ = RegDeleteValueW(approved_hkey, APP_VALUE_NAME);
+                let _ = RegDeleteValueW(approved_hkey, LEGACY_APP_VALUE_NAME);
+                let _ = RegCloseKey(approved_hkey);
+            }
+
+            // 3. Rimuovi file .lnk da Startup
+            if let Some(lnk_path) = get_startup_lnk_path() {
+                if lnk_path.exists() {
+                    let _ = std::fs::remove_file(lnk_path);
+                }
+            }
+        }
+    }
+
+    Ok(())
+}

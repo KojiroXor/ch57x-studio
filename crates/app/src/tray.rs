@@ -118,9 +118,22 @@ mod windows_tray {
         }
     }
 
+    pub fn remove_tray_icon(hwnd: HWND) {
+        unsafe {
+            let nid = NOTIFYICONDATAW {
+                cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
+                hWnd: hwnd,
+                uID: 1,
+                ..Default::default()
+            };
+            let _ = Shell_NotifyIconW(NIM_DELETE, &nid);
+        }
+    }
+
     pub fn cleanup() {
         if let Some(&raw_hwnd) = TRAY_HWND.get() {
             let hwnd = HWND(raw_hwnd as *mut _);
+            remove_tray_icon(hwnd);
             unsafe {
                 let _ = windows::Win32::UI::WindowsAndMessaging::PostMessageW(
                     Some(hwnd),
@@ -128,6 +141,31 @@ mod windows_tray {
                     WPARAM(0),
                     LPARAM(0),
                 );
+            }
+        }
+    }
+
+    unsafe fn restore_main_window() {
+        if let Ok(main_hwnd) = windows::Win32::UI::WindowsAndMessaging::FindWindowW(
+            None,
+            windows::core::w!("VortexDeck — CH57x Studio"),
+        )
+        .or_else(|_| {
+            windows::Win32::UI::WindowsAndMessaging::FindWindowW(
+                None,
+                windows::core::w!("VortexDeck"),
+            )
+        }) {
+            if !main_hwnd.0.is_null() {
+                let _ = windows::Win32::UI::WindowsAndMessaging::ShowWindow(
+                    main_hwnd,
+                    windows::Win32::UI::WindowsAndMessaging::SW_RESTORE,
+                );
+                let _ = windows::Win32::UI::WindowsAndMessaging::ShowWindow(
+                    main_hwnd,
+                    windows::Win32::UI::WindowsAndMessaging::SW_SHOW,
+                );
+                let _ = windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow(main_hwnd);
             }
         }
     }
@@ -209,6 +247,13 @@ mod windows_tray {
                     let _ = GetCursorPos(&mut pt);
                     let _ = SetForegroundWindow(hwnd);
 
+                    let is_auto = ch57x_platform::is_autostart_enabled();
+                    let check_flag = if is_auto {
+                        windows::Win32::UI::WindowsAndMessaging::MF_CHECKED
+                    } else {
+                        windows::Win32::UI::WindowsAndMessaging::MF_UNCHECKED
+                    };
+
                     let hmenu = CreatePopupMenu().unwrap_or_default();
                     if !hmenu.0.is_null() {
                         let _ = AppendMenuW(hmenu, MF_STRING, ID_TRAY_OPEN, w!("Apri VortexDeck"));
@@ -216,9 +261,9 @@ mod windows_tray {
                             AppendMenuW(hmenu, MF_STRING, ID_TRAY_PAUSE, w!("Pausa Automazioni"));
                         let _ = AppendMenuW(
                             hmenu,
-                            MF_STRING,
+                            MF_STRING | check_flag,
                             ID_TRAY_AUTOSTART,
-                            w!("Avvio automatico con Windows (ON/OFF)"),
+                            w!("Avvio automatico con Windows"),
                         );
                         let _ =
                             AppendMenuW(hmenu, MF_STRING, ID_TRAY_HUD, w!("Visualizza HUD OSD"));
@@ -241,6 +286,7 @@ mod windows_tray {
                         let _ = DestroyMenu(hmenu);
                     }
                 } else if event == WM_LBUTTONUP || event == WM_LBUTTONDBLCLK {
+                    restore_main_window();
                     if let Some(sender) = GLOBAL_TRAY_SENDER.get() {
                         let _ = sender.send(TrayAction::ShowWindow);
                         notify_repaint();
@@ -253,6 +299,7 @@ mod windows_tray {
                 if let Some(sender) = GLOBAL_TRAY_SENDER.get() {
                     match cmd_id {
                         ID_TRAY_OPEN => {
+                            restore_main_window();
                             let _ = sender.send(TrayAction::ShowWindow);
                             notify_repaint();
                         }
@@ -261,6 +308,8 @@ mod windows_tray {
                             notify_repaint();
                         }
                         ID_TRAY_AUTOSTART => {
+                            let current = ch57x_platform::is_autostart_enabled();
+                            let _ = ch57x_platform::set_autostart_enabled(!current);
                             let _ = sender.send(TrayAction::ToggleAutostart);
                             notify_repaint();
                         }
@@ -269,9 +318,9 @@ mod windows_tray {
                             notify_repaint();
                         }
                         ID_TRAY_EXIT => {
+                            remove_tray_icon(hwnd);
                             let _ = sender.send(TrayAction::Quit);
-                            notify_repaint();
-                            PostQuitMessage(0);
+                            std::process::exit(0);
                         }
                         _ => {}
                     }

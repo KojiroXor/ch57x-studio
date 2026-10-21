@@ -15,11 +15,6 @@ use ch57x_domain::errors::PlatformError;
 use ch57x_domain::triggers::PhantomTrigger;
 use hotkeys::WindowsHotkeysBackend;
 use std::path::Path;
-use windows::core::{w, PCWSTR};
-use windows::Win32::System::Registry::{
-    RegCloseKey, RegDeleteValueW, RegOpenKeyExW, RegQueryValueExW, RegSetValueExW, HKEY,
-    HKEY_CURRENT_USER, KEY_READ, KEY_WRITE, REG_SZ,
-};
 
 pub struct WindowsPlatform {
     hotkeys: WindowsHotkeysBackend,
@@ -36,6 +31,14 @@ impl WindowsPlatform {
             input: WindowsInputInjector,
             autostart: WindowsAutostart,
         }
+    }
+
+    pub fn is_autostart_enabled(&self) -> bool {
+        windows_api::is_autostart_enabled()
+    }
+
+    pub fn set_autostart_enabled(&self, enabled: bool) -> Result<(), PlatformError> {
+        windows_api::set_autostart_enabled(enabled)
     }
 }
 
@@ -75,6 +78,14 @@ impl PlatformBackend for WindowsPlatform {
         profile: &ch57x_domain::profile::Profile,
     ) -> Result<(), PlatformError> {
         shortcut_sync::sync_start_menu_shortcuts(profile)
+    }
+
+    fn is_autostart_enabled(&self) -> bool {
+        windows_api::is_autostart_enabled()
+    }
+
+    fn set_autostart_enabled(&self, enabled: bool) -> Result<(), PlatformError> {
+        windows_api::set_autostart_enabled(enabled)
     }
 }
 
@@ -166,6 +177,14 @@ impl WindowManagerBackend for WindowsWindowManager {
     ) -> Result<WindowActionResult, PlatformError> {
         windows_api::execute_launch_or_place(selector, placement, launch_cmd, timeout_ms)
     }
+
+    fn is_autostart_enabled(&self) -> bool {
+        windows_api::is_autostart_enabled()
+    }
+
+    fn set_autostart_enabled(&self, enabled: bool) -> Result<(), PlatformError> {
+        windows_api::set_autostart_enabled(enabled)
+    }
 }
 
 pub struct WindowsInputInjector;
@@ -190,65 +209,12 @@ impl InputInjectorBackend for WindowsInputInjector {
 
 pub struct WindowsAutostart;
 
-const RUN_KEY_PATH: PCWSTR = w!("Software\\Microsoft\\Windows\\CurrentVersion\\Run");
-const APP_VALUE_NAME: PCWSTR = w!("VortexDeck");
-const LEGACY_APP_VALUE_NAME: PCWSTR = w!("CH57xStudio");
-
 impl AutostartBackend for WindowsAutostart {
     fn is_enabled(&self) -> Result<bool, PlatformError> {
-        unsafe {
-            let mut hkey = HKEY::default();
-            if RegOpenKeyExW(HKEY_CURRENT_USER, RUN_KEY_PATH, None, KEY_READ, &mut hkey).is_err() {
-                return Ok(false);
-            }
-
-            let mut len = 0u32;
-            let query_res =
-                RegQueryValueExW(hkey, APP_VALUE_NAME, None, None, None, Some(&mut len));
-            let legacy_res = RegQueryValueExW(
-                hkey,
-                LEGACY_APP_VALUE_NAME,
-                None,
-                None,
-                None,
-                Some(&mut len),
-            );
-            let _ = RegCloseKey(hkey);
-
-            Ok((query_res.is_ok() || legacy_res.is_ok()) && len > 0)
-        }
+        Ok(windows_api::is_autostart_enabled())
     }
 
-    fn set_enabled(&self, enabled: bool, exe_path: &Path) -> Result<(), PlatformError> {
-        unsafe {
-            let mut hkey = HKEY::default();
-            if RegOpenKeyExW(HKEY_CURRENT_USER, RUN_KEY_PATH, None, KEY_WRITE, &mut hkey).is_err() {
-                return Err(PlatformError::SystemApi(
-                    "Failed to open HKCU Run registry key".into(),
-                ));
-            }
-
-            let res = if enabled {
-                let cmd_str = format!("\"{}\" --background\0", exe_path.display());
-                let utf16_units: Vec<u16> = cmd_str.encode_utf16().collect();
-                let bytes = std::slice::from_raw_parts(
-                    utf16_units.as_ptr() as *const u8,
-                    utf16_units.len() * 2,
-                );
-
-                let _ = RegDeleteValueW(hkey, LEGACY_APP_VALUE_NAME);
-                RegSetValueExW(hkey, APP_VALUE_NAME, None, REG_SZ, Some(bytes)).ok()
-            } else {
-                let _ = RegDeleteValueW(hkey, APP_VALUE_NAME);
-                let _ = RegDeleteValueW(hkey, LEGACY_APP_VALUE_NAME);
-                Ok(())
-            };
-
-            let _ = RegCloseKey(hkey);
-
-            res.map_err(|e| {
-                PlatformError::SystemApi(format!("Failed to update autostart in registry: {e}"))
-            })
-        }
+    fn set_enabled(&self, enabled: bool, _exe_path: &Path) -> Result<(), PlatformError> {
+        windows_api::set_autostart_enabled(enabled)
     }
 }

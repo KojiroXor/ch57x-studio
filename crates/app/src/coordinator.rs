@@ -74,6 +74,7 @@ pub struct AppCoordinator {
     pub cached_usb_status: UsbStatus,
     pub last_usb_poll: Instant,
     pub is_flashing: Arc<AtomicBool>,
+    pub autostart_enabled: bool,
 }
 
 impl AppCoordinator {
@@ -174,6 +175,7 @@ impl AppCoordinator {
         let cached_usb_status = probe_usb_status();
         let last_usb_poll = Instant::now();
         let is_flashing = Arc::new(AtomicBool::new(false));
+        let autostart_enabled = platform.is_autostart_enabled();
 
         Ok(Self {
             profile,
@@ -190,6 +192,7 @@ impl AppCoordinator {
             cached_usb_status,
             last_usb_poll,
             is_flashing,
+            autostart_enabled,
         })
     }
 
@@ -207,6 +210,28 @@ impl AppCoordinator {
 
     pub fn is_flashing(&self) -> bool {
         self.is_flashing.load(Ordering::SeqCst)
+    }
+
+    pub fn toggle_autostart(&mut self) {
+        let target = !self.autostart_enabled;
+        match self.platform.set_autostart_enabled(target) {
+            Ok(_) => {
+                // Rileggi lo stato reale dal sistema operativo per conferma al 100%
+                self.autostart_enabled = self.platform.is_autostart_enabled();
+                let msg = if self.autostart_enabled {
+                    "Avvio automatico con Windows ATTIVATO (partirà in background all'accensione)."
+                } else {
+                    "Avvio automatico con Windows DISATTIVATO."
+                };
+                self.ui_state.set_status(msg, StatusLevel::Success);
+            }
+            Err(e) => {
+                self.ui_state.set_status(
+                    format!("Errore modifica Avvio Automatico: {}", e),
+                    StatusLevel::Error,
+                );
+            }
+        }
     }
 
     /// Processa tutti i comandi in coda non-bloccanti

@@ -10,6 +10,9 @@ pub trait PlatformBackend: Send + Sync {
     fn capability_matrix(&self) -> CapabilityMatrix;
     fn hotkeys(&self) -> &dyn HotkeyBackend;
     fn windows(&self) -> &dyn WindowManagerBackend;
+    fn window_manager(&self) -> &dyn WindowManagerBackend {
+        self.windows()
+    }
     fn input(&self) -> &dyn InputInjectorBackend;
     fn autostart(&self) -> &dyn AutostartBackend;
     fn adjust_brightness(&self, _delta: i32) -> Result<u32, PlatformError> {
@@ -61,6 +64,12 @@ pub trait WindowManagerBackend: Send + Sync {
         launch_cmd: Option<(&Path, &[String], Option<&Path>)>,
         timeout_ms: u64,
     ) -> Result<WindowActionResult, PlatformError>;
+    fn is_autostart_enabled(&self) -> bool {
+        false
+    }
+    fn set_autostart_enabled(&self, _enabled: bool) -> Result<(), PlatformError> {
+        Ok(())
+    }
 }
 
 pub trait InputInjectorBackend: Send + Sync {

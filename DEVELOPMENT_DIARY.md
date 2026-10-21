@@ -201,3 +201,32 @@
   - `cargo clippy --workspace --all-targets -- -D warnings`: **0 warning**.
   - `cargo fmt --all -- --check`: **Formattazione conforme**.
   - Compilazione Release e packaging `dist/VortexDeck/vortexdeck.exe` completati con successo.
+
+
+---
+
+### Sessione 16: Fix Chiusura Immediata System Tray ("Esci" a Zero Processi Residui), Risveglio Win32 e Autostart a Doppia Garanzia
+- **Data**: `2026-10-21`
+- **Motivazione**: Risoluzione dei due bug critici nell'uso quotidiano su Windows 11 / Surface:
+  1. *Chiusura bloccata da System Tray*: premendo "Esci", l'icona spariva ma il processo `vortexdeck.exe` restava orfano e bloccato in Task Manager perché la finestra nascosta (`Visible(false)`) metteva in pausa il loop di `winit`/`eframe`.
+  2. *Autostart fallace all'avvio di Windows*: Windows avviava il processo con working directory `C:\Windows\System32`, rompendo i percorsi relativi, e il Task Manager di Windows 11 poteva bloccare l'avvio in `StartupApproved`.
+- **Interventi Realizzati**:
+  1. **Working Directory Garantita (`crates/app/src/main.rs`)**:
+     - Impostata come primissima istruzione in `fn main()` la directory dell'eseguibile (`std::env::set_current_dir(exe_dir)`), garantendo che file di configurazione e binari relativi vengano sempre trovati.
+     - Preservato `_tray_handle` nel loop background con terminazione immediata e pulita via `std::process::exit(0)`.
+  2. **Chiusura Immediata Win32 e Risveglio Finestra (`crates/app/src/tray.rs`)**:
+     - Al click su "Esci" (`ID_TRAY_EXIT`), chiamata immediata a `remove_tray_icon(hwnd)` (`Shell_NotifyIconW(NIM_DELETE)`) per eliminare subito l'icona dalla shell di Windows, seguita da `std::process::exit(0)` per terminare all'istante tutti i thread senza processi residui.
+     - Al click su "Apri VortexDeck" o doppio-click sull'icona della tray, risveglio diretto a livello Win32 (`FindWindowW`, `ShowWindow(SW_RESTORE)`, `ShowWindow(SW_SHOW)`, `SetForegroundWindow`), bypassando la pausa di rendering di `winit`.
+     - Nel menu contestuale (`WM_RBUTTONUP`), visualizzazione dinamica della spunta Win32 `MF_CHECKED` / `MF_UNCHECKED` e toggle reattivo istantaneo su `ID_TRAY_AUTOSTART`.
+  3. **Sistema Autostart a Doppia Garanzia (`crates/platform/src/windows/windows_api.rs`)**:
+     - *Doppia Registrazione*: Scrittura del valore `VortexDeck` in `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` con comando `"<exe>" --background` E creazione automatica del collegamento `.lnk` in `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\VortexDeck.lnk` con COM `IShellLinkW` (inclusi `SetArguments` e `SetWorkingDirectory`).
+     - *Sblocco Windows 11*: Cancellazione automatica dei blocchi di Task Manager in `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run`.
+     - *Rimozione Completa*: Cancellazione di chiave `Run`, chiave `StartupApproved` e cancellazione file `.lnk` da disco.
+  4. **Pulsante Toolbar Reattivo & Test Automatizzato**:
+     - Sostituito il toggle con un vero `egui::Button` cliccabile con testo pulito `Avvio Win: ON` / `Avvio Win: OFF` (senza caratteri Unicode che causavano problemi di font fallback) collegato a `coordinator.toggle_autostart()`.
+     - Aggiunto unit test `test_win32_autostart_full_lifecycle` che collauda l'intero ciclo di attivazione, presenza file `.lnk`, chiave registro e disattivazione.
+- **Esito Verifiche**:
+  - `cargo test --workspace`: **100% test superati (76 unit & integration tests)**.
+  - `cargo clippy --workspace --all-targets -- -D warnings`: **0 warning**.
+  - `cargo fmt --all -- --check`: **Formattazione conforme**.
+  - Binario release aggiornato in [`dist/VortexDeck/vortexdeck.exe`](dist/VortexDeck/vortexdeck.exe).
