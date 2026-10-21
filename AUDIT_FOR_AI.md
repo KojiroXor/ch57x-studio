@@ -268,3 +268,19 @@ Se vieni incaricato di espandere ulteriormente VortexDeck, ecco i compiti a più
 4. **Architettura 100% Single-File Standalone (`crates/hardware/src/cli_adapter.rs`)**:
    - Il tool di flashing `ch57x-keyboard-tool.exe` (1.9 MB) e tutti gli asset grafici sono incorporati nel binario via `include_bytes!`.
    - Se l'utente sposta **soltanto il singolo file `vortexdeck.exe`** su un PC nuovo, il programma auto-estrae il tool in `%TEMP%\vortexdeck\bin\` al bisogno: l'app non fallisce mai, non richiede cartelle ausiliarie né tool di sviluppo.
+
+
+---
+
+### Sessione 18: Cartelle Dinamiche per Terminali (`agy`), Eliminazione Furto Hotkey e Autostart a Prova di Shell Delay
+1. **Rilevamento Cartella Esplora File Attiva (`crates/platform/src/windows/windows_api.rs`)**:
+   - L'azione host `ExecProcess` per `agy` o qualsiasi terminale non eredita più la cartella dell'eseguibile (`exe_dir`).
+   - `get_active_explorer_or_user_dir()` legge tramite `Shell.Application` la cartella attiva in primo piano (`GetForegroundWindow()`) o l'ultima finestra aperta di Esplora File. Se nessuna cartella è aperta, ripiega su `USERPROFILE` (`C:\Users\<utente>`), garantendo un'esperienza CLI coerente con il contesto di lavoro dell'utente.
+2. **Disattivazione Furto Hotkey da Start Menu (`crates/platform/src/windows/shortcut_sync.rs`)**:
+   - Rimosso `SetHotkey` dai file `.lnk`: Windows Explorer non intercetta più i tasti assegnati ad `agy` con working directory statica, consentendo a VortexDeck il pieno controllo del dispatching dinamico.
+3. **Isolamento Test e Tutela Registro Autostart**:
+   - Risolta l'eliminazione della chiave di registro causata da `cargo test`: i test operano esclusivamente sulla chiave isolata `VortexDeck_Test_Only` e il codice di produzione è protetto contro l'esecuzione dai path `\deps\`.
+   - Autostart standardizzato su `HKCU\...\Run` con flag `--background` e sblocco `StartupApproved\Run` (`[0x02, ...]`).
+4. **Resilienza System Tray su Shell Riavviata / Ritardata (`crates/app/src/tray.rs`)**:
+   - Aggiunto loop con 15 retry (500ms) all'avvio in background per attendere la disponibilità della shell di Windows.
+   - Sottoscritto il messaggio `TaskbarCreated`: ripristino istantaneo dell'icona nella barra di notifica in caso di crash o riavvio di `explorer.exe`.

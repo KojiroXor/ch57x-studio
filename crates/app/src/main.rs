@@ -90,6 +90,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut coordinator = AppCoordinator::new(is_safe_mode)?;
     let tray = TrayHandle::new();
 
+    // Se autostart è attivo e l'applicazione viene avviata in modalità interattiva (con finestra),
+    // ri-sincronizza il valore nel Registro di Windows (HKCU\...\Run) con l'eseguibile attuale (current_exe).
+    #[cfg(target_os = "windows")]
+    if !is_background && coordinator.autostart_enabled {
+        let _ = ch57x_platform::set_autostart_enabled(true);
+    }
+
     if is_background {
         let _tray_handle = &tray;
         loop {

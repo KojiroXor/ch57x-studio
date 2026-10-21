@@ -206,11 +206,65 @@ impl RuntimeDispatcher {
                 DispatchOutcome::Macro(outcome)
             }
             ActionDefinition::ExecProcess(action) => {
+                let target_dir = action
+                    .working_dir
+                    .as_ref()
+                    .filter(|p| !p.as_os_str().is_empty())
+                    .cloned()
+                    .unwrap_or_else(ch57x_platform::get_active_explorer_or_user_dir);
+
+                let target_dir_str = target_dir.to_string_lossy().to_string();
+
+                let prog_name = action
+                    .program
+                    .file_name()
+                    .map(|f| f.to_string_lossy().to_lowercase())
+                    .unwrap_or_default();
+
                 let mut cmd = std::process::Command::new(&action.program);
-                cmd.args(&action.args);
-                if let Some(ref dir) = action.working_dir {
-                    cmd.current_dir(dir);
+
+                let mut processed_args = Vec::new();
+                let args = &action.args;
+
+                // Gestione per cmd.exe /c start ... senza /d esplicito:
+                // Inietta start "" /d "<target_dir>" affinché la console Windows
+                // si apra nativamente ed esattamente nella cartella attiva!
+                if (prog_name == "cmd.exe" || prog_name == "cmd")
+                    && args.len() >= 2
+                    && args[0] == "/c"
+                    && args[1].eq_ignore_ascii_case("start")
+                    && !args.iter().any(|a| a.eq_ignore_ascii_case("/d"))
+                {
+                    processed_args.push("/c".to_string());
+                    processed_args.push("start".to_string());
+                    processed_args.push(String::new()); // Titolo finestra vuoto per start
+                    processed_args.push("/d".to_string());
+                    processed_args.push(target_dir_str.clone());
+
+                    let start_rest = if args.len() >= 3 && args[2].is_empty() {
+                        3
+                    } else {
+                        2
+                    };
+                    for a in &args[start_rest..] {
+                        if a == "." {
+                            processed_args.push(target_dir_str.clone());
+                        } else {
+                            processed_args.push(a.clone());
+                        }
+                    }
+                } else {
+                    for a in args {
+                        if a == "." {
+                            processed_args.push(target_dir_str.clone());
+                        } else {
+                            processed_args.push(a.clone());
+                        }
+                    }
                 }
+
+                cmd.args(&processed_args);
+                cmd.current_dir(&target_dir);
 
                 #[cfg(target_os = "windows")]
                 {

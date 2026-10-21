@@ -264,3 +264,33 @@
   - `cargo test --workspace`: **100% test superati (76 unit & integration tests)**.
   - `cargo clippy --workspace --all-targets -- -D warnings`: **0 warning**.
   - `build_release.ps1`: Pacchetto distribuibile generato con successo in [`dist/VortexDeck`](dist/VortexDeck).
+
+
+---
+
+### Sessione 18: Cartella Dinamica di Esplora File per `agy`, Isolamento Test Autostart e Tolleranza Riavvio Shell
+- **Data**: `2026-10-21`
+- **Motivazione**: Risolvere l'apertura statica di `agy` nella cartella dell'eseguibile, correggere la cancellazione dell'autostart provocata dalla suite di test di Cargo, e garantire l'avvio in System Tray anche con shell Explorer ritardata o riavviata al boot di Windows.
+- **Interventi Realizzati**:
+  1. **Rilevamento Dinamico Cartella Esplora File (`crates/platform/src/windows/windows_api.rs`)**:
+     - Implementato `get_active_explorer_directory() -> Option<PathBuf>` che interroga l'oggetto COM `Shell.Application` via PowerShell `CREATE_NO_WINDOW`. Cerca prioritariamente la finestra di Esplora File il cui `HWND` corrisponde a `GetForegroundWindow()`, oppure la prima finestra di Esplora File visibile in z-order.
+     - Implementato `get_active_explorer_or_user_dir() -> PathBuf`: se non vi è alcuna finestra di Esplora File aperta, ripiega elegantemente sulla cartella Home dell'utente (`USERPROFILE` / `HOME`), **mai** sulla cartella di installazione di `vortexdeck.exe`.
+  2. **Iniezione Cartella Dinamica nel Runtime (`crates/runtime/src/dispatcher.rs`)**:
+     - Quando `ActionDefinition::ExecProcess` viene invocata con `working_dir: None` (o con `"."` negli argomenti, es. per `cmd.exe /k agy` o `wt.exe -d .`), il dispatcher calcola dinamicamente la cartella attiva ed inietta `"" /d "<target_dir>"` per `cmd.exe /c start`, sostituendo i segnaposto `"."` con il percorso reale rilevato.
+  3. **Disabilitazione Furto Hotkey da Start Menu (`crates/platform/src/windows/shortcut_sync.rs`)**:
+     - Rimosso `SetHotkey` dai file `.lnk` dello Start Menu: `explorer.exe` non intercetta più la combinazione con cartella statica prima di VortexDeck.
+     - Pulizia automatica dei collegamenti `.lnk` legacy in `%APPDATA%\Microsoft\Windows\Start Menu\Programs\VortexDeck`.
+  4. **Isolamento Test e Tutela Autostart Utente (`crates/platform/src/windows/windows_api.rs`, `crates/platform/src/lib.rs`)**:
+     - Risolto il bug critico per cui l'esecuzione di `cargo test` cancellava la voce di autostart reale dell'utente (`HKCU\...\Run\VortexDeck`):
+       * Aggiunto guard `if (exe_str.contains("\\deps\\") || exe_str.contains("/deps/"))` che impedisce ai binari di test di Cargo di manipolare la chiave di produzione.
+       * Aggiornato `test_win32_autostart_full_lifecycle` per operare esclusivamente sulla chiave isolata `VortexDeck_Test_Only`.
+       * Semplificato l'autostart sul modello canonico Windows: registrazione univoca in `HKCU\...\Run` con flag `--background`, eliminazione dei duplicati in `Startup\VortexDeck.lnk` e abilitazione automatica dei 12 byte binari `[0x02, ...]` in `HKCU\...\Explorer\StartupApproved\Run`.
+  5. **Resilienza System Tray al Boot e Riavvio Explorer (`crates/app/src/tray.rs`, `crates/app/src/main.rs`)**:
+     - Aggiunto loop di retry con backoff fino a 15 tentativi (500ms) per `Shell_NotifyIconW(NIM_ADD)` all'avvio in background di Windows.
+     - Registrato il messaggio di sistema `RegisterWindowMessageW(w!("TaskbarCreated"))`: se Windows Explorer si riavvia o la taskbar si ricrea, la System Tray di VortexDeck reinserisce immediatamente l'icona.
+     - All'avvio interattivo dell'applicazione con autostart attivo, il path in `HKCU\...\Run` viene riallineato automaticamente all'eseguibile corrente (`current_exe`).
+- **Esito Verifiche**:
+  - `cargo fmt --all -- --check`: **Conforme**.
+  - `cargo clippy --workspace --all-targets -- -D warnings`: **0 warning**.
+  - `cargo test --workspace`: **100% superati (76 unit & integration tests)**.
+  - `build_release.ps1`: Pacchetto distribuibile e icona PE generati in [`dist/VortexDeck/vortexdeck.exe`](dist/VortexDeck/vortexdeck.exe).

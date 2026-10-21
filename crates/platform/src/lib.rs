@@ -14,7 +14,25 @@ pub use traits::*;
 pub use windows::WindowsPlatform as CurrentPlatform;
 
 #[cfg(target_os = "windows")]
-pub use windows::windows_api::{get_startup_lnk_path, is_autostart_enabled, set_autostart_enabled};
+pub use windows::windows_api::{
+    get_active_explorer_directory, get_active_explorer_or_user_dir, get_startup_lnk_path,
+    get_user_home_dir, is_autostart_enabled, set_autostart_enabled,
+};
+
+#[cfg(not(target_os = "windows"))]
+pub fn get_user_home_dir() -> std::path::PathBuf {
+    dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("/"))
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn get_active_explorer_directory() -> Option<std::path::PathBuf> {
+    None
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn get_active_explorer_or_user_dir() -> std::path::PathBuf {
+    get_user_home_dir()
+}
 
 #[cfg(target_os = "linux")]
 pub use linux::LinuxPlatform as CurrentPlatform;
@@ -161,47 +179,37 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn test_win32_autostart_full_lifecycle() {
-        let platform = get_platform();
+        const TEST_KEY: &str = "VortexDeck_Test_Only";
 
-        // 1. Abilita autostart
-        let set_res = platform.window_manager().set_autostart_enabled(true);
+        // 1. Abilita autostart su chiave di test isolata (senza toccare o cancellare l'autostart reale dell'utente!)
+        let set_res = crate::windows::windows_api::set_autostart_enabled_named(TEST_KEY, true);
         assert!(
             set_res.is_ok(),
-            "set_autostart_enabled(true) should succeed: {:?}",
+            "set_autostart_enabled_named(true) should succeed: {:?}",
             set_res
         );
 
-        // 2. Verifica presenza .lnk e chiave registro tramite is_autostart_enabled
-        let enabled = platform.is_autostart_enabled();
+        // 2. Verifica presenza chiave registro di test tramite is_autostart_enabled_named
+        let enabled = crate::windows::windows_api::is_autostart_enabled_named(TEST_KEY);
         assert!(
             enabled,
-            "is_autostart_enabled should return true after enable"
+            "is_autostart_enabled_named should return true after enable"
         );
-        assert!(platform.window_manager().is_autostart_enabled());
 
-        if let Some(lnk_path) = crate::get_startup_lnk_path() {
-            assert!(lnk_path.exists(), "Startup .lnk file must exist");
-        }
-
-        // 3. Disabilita autostart
-        let unset_res = platform.window_manager().set_autostart_enabled(false);
+        // 3. Disabilita autostart di test
+        let unset_res = crate::windows::windows_api::set_autostart_enabled_named(TEST_KEY, false);
         assert!(
             unset_res.is_ok(),
-            "set_autostart_enabled(false) should succeed: {:?}",
+            "set_autostart_enabled_named(false) should succeed: {:?}",
             unset_res
         );
 
         // 4. Verifica disattivazione
-        let disabled = platform.is_autostart_enabled();
+        let disabled = crate::windows::windows_api::is_autostart_enabled_named(TEST_KEY);
         assert!(
             !disabled,
-            "is_autostart_enabled should return false after disable"
+            "is_autostart_enabled_named should return false after disable"
         );
-        assert!(!platform.window_manager().is_autostart_enabled());
-
-        if let Some(lnk_path) = crate::get_startup_lnk_path() {
-            assert!(!lnk_path.exists(), "Startup .lnk file must be removed");
-        }
     }
 
     #[cfg(target_os = "windows")]

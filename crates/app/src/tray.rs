@@ -92,21 +92,25 @@ mod windows_tray {
     use windows::core::w;
     use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, WPARAM};
     use windows::Win32::UI::Shell::{
-        Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY, NOTIFYICONDATAW,
+        Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY,
+        NOTIFYICONDATAW,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu,
-        DispatchMessageW, GetCursorPos, GetMessageW, LoadIconW, PostQuitMessage, RegisterClassW,
-        SetForegroundWindow, TrackPopupMenu, IDI_APPLICATION, MF_SEPARATOR, MF_STRING, MSG,
+        DispatchMessageW, GetCursorPos, GetMessageW, LoadIconW, LoadImageW, PostQuitMessage,
+        RegisterClassW, RegisterWindowMessageW, SetForegroundWindow, TrackPopupMenu, HICON,
+        IDI_APPLICATION, IMAGE_ICON, LR_DEFAULTSIZE, LR_LOADFROMFILE, MF_SEPARATOR, MF_STRING, MSG,
         TPM_BOTTOMALIGN, TPM_LEFTALIGN, TPM_RIGHTBUTTON, WM_APP, WM_DESTROY, WM_LBUTTONDBLCLK,
         WM_LBUTTONUP, WM_RBUTTONUP, WNDCLASSW, WS_OVERLAPPEDWINDOW,
-        LoadImageW, HICON, IMAGE_ICON, LR_DEFAULTSIZE, LR_LOADFROMFILE,
     };
 
     use std::sync::OnceLock;
 
+    static WM_TASKBAR_CREATED: OnceLock<u32> = OnceLock::new();
+
     const TRAY_ICON_ICO: &[u8] = include_bytes!("../../../assets/icons/vortexdeck_tray_icon.ico");
-    const TRAY_PAUSED_ICO: &[u8] = include_bytes!("../../../assets/icons/vortexdeck_tray_paused.ico");
+    const TRAY_PAUSED_ICO: &[u8] =
+        include_bytes!("../../../assets/icons/vortexdeck_tray_paused.ico");
 
     fn resolve_icon_path(is_paused: bool) -> std::path::PathBuf {
         let filename = if is_paused {
@@ -303,7 +307,25 @@ mod windows_tray {
             let len = tip.len().min(nid.szTip.len());
             nid.szTip[..len].copy_from_slice(&tip[..len]);
 
-            let _ = Shell_NotifyIconW(NIM_ADD, &nid);
+            let taskbar_msg = RegisterWindowMessageW(w!("TaskbarCreated"));
+            if taskbar_msg != 0 {
+                let _ = WM_TASKBAR_CREATED.set(taskbar_msg);
+            }
+
+            // Retry loop fino a 15 volte per garantire che la System Tray sia pronta al boot di Windows
+            let mut added = false;
+            for _ in 0..15 {
+                if Shell_NotifyIconW(NIM_ADD, &nid).as_bool() {
+                    added = true;
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
+            if !added {
+                tracing::warn!(
+                    "Impossibile registrare Shell_NotifyIconW dopo 15 tentativi all'avvio."
+                );
+            }
 
             let mut msg = MSG::default();
             while GetMessageW(&mut msg, None, 0, 0).as_bool() {
@@ -320,6 +342,30 @@ mod windows_tray {
         wparam: WPARAM,
         lparam: LPARAM,
     ) -> LRESULT {
+        // Se la barra delle applicazioni viene ricreata (es. all'avvio o dopo crash di explorer.exe),
+        // reinserisci immediatamente l'icona di VortexDeck nella System Tray!
+        if let Some(&taskbar_msg) = WM_TASKBAR_CREATED.get() {
+            if msg == taskbar_msg {
+                let icon = load_tray_icon(false);
+                let mut nid = NOTIFYICONDATAW {
+                    cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
+                    hWnd: hwnd,
+                    uID: 1,
+                    uFlags: NIF_MESSAGE | NIF_ICON | NIF_TIP,
+                    uCallbackMessage: WM_TRAY_CALLBACK,
+                    hIcon: icon,
+                    ..Default::default()
+                };
+                let tip = "VortexDeck — CH57x Studio\0"
+                    .encode_utf16()
+                    .collect::<Vec<u16>>();
+                let len = tip.len().min(nid.szTip.len());
+                nid.szTip[..len].copy_from_slice(&tip[..len]);
+                let _ = Shell_NotifyIconW(NIM_ADD, &nid);
+                return LRESULT(0);
+            }
+        }
+
         match msg {
             WM_TRAY_CALLBACK => {
                 let event = lparam.0 as u32;

@@ -481,40 +481,59 @@ pub fn get_startup_lnk_path() -> Option<PathBuf> {
 }
 
 pub fn is_autostart_enabled() -> bool {
-    // 1. Controlla presenza file .lnk nella cartella Startup
-    if let Some(lnk_path) = get_startup_lnk_path() {
-        if lnk_path.exists() {
-            return true;
-        }
-    }
+    is_autostart_enabled_named("VortexDeck")
+}
 
-    // 2. Controlla chiave di registro HKCU Run
+pub fn is_autostart_enabled_named(value_name: &str) -> bool {
+    // 1. Controlla chiave di registro HKCU Run (metodo primario)
     unsafe {
-        use windows::core::{w, PCWSTR};
+        use windows::core::PCWSTR;
         use windows::Win32::System::Registry::{
             RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY, HKEY_CURRENT_USER, KEY_READ,
         };
 
-        const RUN_KEY_PATH: PCWSTR = w!("Software\\Microsoft\\Windows\\CurrentVersion\\Run");
-        const APP_VALUE_NAME: PCWSTR = w!("VortexDeck");
-        const LEGACY_APP_VALUE_NAME: PCWSTR = w!("CH57xStudio");
+        const RUN_KEY_PATH: PCWSTR =
+            windows::core::w!("Software\\Microsoft\\Windows\\CurrentVersion\\Run");
+        let wide_name: Vec<u16> = value_name
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
 
         let mut hkey = HKEY::default();
         if RegOpenKeyExW(HKEY_CURRENT_USER, RUN_KEY_PATH, None, KEY_READ, &mut hkey).is_ok() {
             let mut len = 0u32;
-            let query_res =
-                RegQueryValueExW(hkey, APP_VALUE_NAME, None, None, None, Some(&mut len));
-            let legacy_res = RegQueryValueExW(
+            let query_res = RegQueryValueExW(
                 hkey,
-                LEGACY_APP_VALUE_NAME,
+                PCWSTR(wide_name.as_ptr()),
                 None,
                 None,
                 None,
                 Some(&mut len),
             );
+            let legacy_res = if value_name == "VortexDeck" {
+                RegQueryValueExW(
+                    hkey,
+                    windows::core::w!("CH57xStudio"),
+                    None,
+                    None,
+                    None,
+                    Some(&mut len),
+                )
+            } else {
+                windows::Win32::Foundation::WIN32_ERROR(2)
+            };
             let _ = RegCloseKey(hkey);
 
             if (query_res.is_ok() || legacy_res.is_ok()) && len > 0 {
+                return true;
+            }
+        }
+    }
+
+    // 2. Fallback: controlla presenza file .lnk nella cartella Startup
+    if value_name == "VortexDeck" {
+        if let Some(lnk_path) = get_startup_lnk_path() {
+            if lnk_path.exists() {
                 return true;
             }
         }
@@ -524,25 +543,38 @@ pub fn is_autostart_enabled() -> bool {
 }
 
 pub fn set_autostart_enabled(enabled: bool) -> Result<(), PlatformError> {
+    set_autostart_enabled_named("VortexDeck", enabled)
+}
+
+pub fn set_autostart_enabled_named(value_name: &str, enabled: bool) -> Result<(), PlatformError> {
     unsafe {
-        use windows::core::{w, Interface, PCWSTR};
-        use windows::Win32::System::Com::{
-            CoCreateInstance, CoInitializeEx, CoUninitialize, IPersistFile, CLSCTX_INPROC_SERVER,
-            COINIT_APARTMENTTHREADED,
-        };
+        use windows::core::PCWSTR;
         use windows::Win32::System::Registry::{
             RegCloseKey, RegCreateKeyExW, RegDeleteValueW, RegOpenKeyExW, RegSetValueExW, HKEY,
-            HKEY_CURRENT_USER, KEY_READ, KEY_WRITE, REG_OPEN_CREATE_OPTIONS, REG_SZ,
+            HKEY_CURRENT_USER, KEY_READ, KEY_WRITE, REG_BINARY, REG_OPEN_CREATE_OPTIONS, REG_SZ,
         };
-        use windows::Win32::UI::Shell::{IShellLinkW, ShellLink};
 
-        const RUN_KEY_PATH: PCWSTR = w!("Software\\Microsoft\\Windows\\CurrentVersion\\Run");
-        const STARTUP_APPROVED_PATH: PCWSTR =
-            w!("Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run");
-        const APP_VALUE_NAME: PCWSTR = w!("VortexDeck");
-        const LEGACY_APP_VALUE_NAME: PCWSTR = w!("CH57xStudio");
+        const RUN_KEY_PATH: PCWSTR =
+            windows::core::w!("Software\\Microsoft\\Windows\\CurrentVersion\\Run");
+        const STARTUP_APPROVED_PATH: PCWSTR = windows::core::w!(
+            "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run"
+        );
 
         let exe = std::env::current_exe().map_err(|e| PlatformError::SystemApi(e.to_string()))?;
+        let exe_str = exe.to_string_lossy();
+
+        // Non sovrascrivere o cancellare l'autostart reale dell'utente dai binari di test di Cargo!
+        if value_name == "VortexDeck"
+            && (exe_str.contains("\\deps\\") || exe_str.contains("/deps/"))
+        {
+            return Ok(());
+        }
+
+        let wide_name: Vec<u16> = value_name
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        let app_val_pcwstr = PCWSTR(wide_name.as_ptr());
 
         if enabled {
             // 1. Scrittura Chiave Registro HKCU\Software\Microsoft\Windows\CurrentVersion\Run
@@ -584,74 +616,63 @@ pub fn set_autostart_enabled(enabled: bool) -> Result<(), PlatformError> {
                 let wide: Vec<u16> = cmd.encode_utf16().collect();
                 let bytes = std::slice::from_raw_parts(wide.as_ptr() as *const u8, wide.len() * 2);
 
-                let _ = RegDeleteValueW(hkey, LEGACY_APP_VALUE_NAME);
-                let _ = RegSetValueExW(hkey, APP_VALUE_NAME, None, REG_SZ, Some(bytes));
+                if value_name == "VortexDeck" {
+                    let _ = RegDeleteValueW(hkey, windows::core::w!("CH57xStudio"));
+                }
+                let _ = RegSetValueExW(hkey, app_val_pcwstr, None, REG_SZ, Some(bytes));
                 let _ = RegCloseKey(hkey);
             }
 
-            // 2. Sblocco StartupApproved\Run di Windows 11
+            // 2. Sblocco StartupApproved\Run di Windows 11 (12 byte binari abilitati [0x02, ...])
             let mut approved_hkey = HKEY::default();
-            if RegOpenKeyExW(
+            let mut disp_app =
+                windows::Win32::System::Registry::REG_CREATE_KEY_DISPOSITION::default();
+            let _ = RegCreateKeyExW(
                 HKEY_CURRENT_USER,
                 STARTUP_APPROVED_PATH,
+                Some(0),
                 None,
-                KEY_WRITE,
+                REG_OPEN_CREATE_OPTIONS(0),
+                KEY_READ | KEY_WRITE,
+                None,
                 &mut approved_hkey,
-            )
-            .is_ok()
-            {
-                let _ = RegDeleteValueW(approved_hkey, APP_VALUE_NAME);
-                let _ = RegDeleteValueW(approved_hkey, LEGACY_APP_VALUE_NAME);
+                Some(&mut disp_app),
+            );
+
+            if !approved_hkey.is_invalid() {
+                let approved_bytes: [u8; 12] = [
+                    0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                ];
+                let _ = RegSetValueExW(
+                    approved_hkey,
+                    app_val_pcwstr,
+                    None,
+                    REG_BINARY,
+                    Some(&approved_bytes),
+                );
+                if value_name == "VortexDeck" {
+                    let _ = RegDeleteValueW(approved_hkey, windows::core::w!("CH57xStudio"));
+                }
                 let _ = RegCloseKey(approved_hkey);
             }
 
-            // 3. Creazione Collegamento .lnk in Startup
-            if let Some(lnk_path) = get_startup_lnk_path() {
-                if let Some(parent) = lnk_path.parent() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
-
-                let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
-                if let Ok(shell_link) =
-                    CoCreateInstance::<_, IShellLinkW>(&ShellLink, None, CLSCTX_INPROC_SERVER)
-                {
-                    let exe_wide: Vec<u16> = exe
-                        .to_string_lossy()
-                        .encode_utf16()
-                        .chain(std::iter::once(0))
-                        .collect();
-                    let _ = shell_link.SetPath(PCWSTR(exe_wide.as_ptr()));
-
-                    let args_wide: Vec<u16> = "--background\0".encode_utf16().collect();
-                    let _ = shell_link.SetArguments(PCWSTR(args_wide.as_ptr()));
-
-                    if let Some(parent) = exe.parent() {
-                        let wd_wide: Vec<u16> = parent
-                            .to_string_lossy()
-                            .encode_utf16()
-                            .chain(std::iter::once(0))
-                            .collect();
-                        let _ = shell_link.SetWorkingDirectory(PCWSTR(wd_wide.as_ptr()));
-                    }
-
-                    if let Ok(persist_file) = shell_link.cast::<IPersistFile>() {
-                        let lnk_wide: Vec<u16> = lnk_path
-                            .to_string_lossy()
-                            .encode_utf16()
-                            .chain(std::iter::once(0))
-                            .collect();
-                        let _ = persist_file.Save(PCWSTR(lnk_wide.as_ptr()), true);
+            // 3. Rimuovi eventuale vecchio duplicato .lnk in Startup per evitare doppio avvio simultaneo in conflitto
+            if value_name == "VortexDeck" {
+                if let Some(lnk_path) = get_startup_lnk_path() {
+                    if lnk_path.exists() {
+                        let _ = std::fs::remove_file(lnk_path);
                     }
                 }
-                CoUninitialize();
             }
         } else {
             // Disabilitazione
             // 1. Rimuovi valore Run
             let mut hkey = HKEY::default();
             if RegOpenKeyExW(HKEY_CURRENT_USER, RUN_KEY_PATH, None, KEY_WRITE, &mut hkey).is_ok() {
-                let _ = RegDeleteValueW(hkey, APP_VALUE_NAME);
-                let _ = RegDeleteValueW(hkey, LEGACY_APP_VALUE_NAME);
+                let _ = RegDeleteValueW(hkey, app_val_pcwstr);
+                if value_name == "VortexDeck" {
+                    let _ = RegDeleteValueW(hkey, windows::core::w!("CH57xStudio"));
+                }
                 let _ = RegCloseKey(hkey);
             }
 
@@ -666,19 +687,61 @@ pub fn set_autostart_enabled(enabled: bool) -> Result<(), PlatformError> {
             )
             .is_ok()
             {
-                let _ = RegDeleteValueW(approved_hkey, APP_VALUE_NAME);
-                let _ = RegDeleteValueW(approved_hkey, LEGACY_APP_VALUE_NAME);
+                let _ = RegDeleteValueW(approved_hkey, app_val_pcwstr);
+                if value_name == "VortexDeck" {
+                    let _ = RegDeleteValueW(approved_hkey, windows::core::w!("CH57xStudio"));
+                }
                 let _ = RegCloseKey(approved_hkey);
             }
 
-            // 3. Rimuovi file .lnk da Startup
-            if let Some(lnk_path) = get_startup_lnk_path() {
-                if lnk_path.exists() {
-                    let _ = std::fs::remove_file(lnk_path);
+            // 3. Rimuovi file .lnk da Startup se presente
+            if value_name == "VortexDeck" {
+                if let Some(lnk_path) = get_startup_lnk_path() {
+                    if lnk_path.exists() {
+                        let _ = std::fs::remove_file(lnk_path);
+                    }
                 }
             }
         }
     }
 
     Ok(())
+}
+
+/// Ritorna la cartella Home dell'utente (USERPROFILE o HOME)
+pub fn get_user_home_dir() -> PathBuf {
+    std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("C:\\"))
+}
+
+/// Rileva la cartella della finestra attiva di Esplora File (File Explorer).
+/// Interroga Shell.Application cercando prima la finestra con HWND corrispondente alla finestra in primo piano,
+/// oppure la prima finestra di Esplora File aperta.
+pub fn get_active_explorer_directory() -> Option<PathBuf> {
+    let script = r#"$fg = [string](Add-Type -MemberDefinition '[DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();' -Name Win32 -Namespace Temp -PassThru)::GetForegroundWindow(); $sh = New-Object -ComObject Shell.Application; $w = $sh.Windows() | Where-Object { [string]$_.HWND -eq $fg } | Select-Object -First 1; if (-not $w) { $w = $sh.Windows() | Select-Object -First 1 }; if ($w -and $w.Document -and $w.Document.Folder) { [Console]::Out.Write($w.Document.Folder.Self.Path) }"#;
+
+    let mut cmd = std::process::Command::new("powershell.exe");
+    cmd.args(["-NoProfile", "-NonInteractive", "-Command", script]);
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    if let Ok(output) = cmd.output() {
+        if output.status.success() {
+            let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path_str.is_empty() {
+                let p = PathBuf::from(&path_str);
+                if p.exists() && p.is_dir() {
+                    return Some(p);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Ritorna la cartella di Esplora File attiva oppure la cartella Home dell'utente (MAI la cartella dell'eseguibile!)
+pub fn get_active_explorer_or_user_dir() -> PathBuf {
+    get_active_explorer_directory().unwrap_or_else(get_user_home_dir)
 }
