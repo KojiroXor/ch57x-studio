@@ -254,6 +254,9 @@
      - *Iniezione Risorse PE Windows (`RT_ICON` & `RT_GROUP_ICON`)*: Sviluppato modulo nativo Win32 (`BeginUpdateResourceW`, `UpdateResourceW`, `EndUpdateResourceW`) che inietta direttamente nell'intestazione PE del file `vortexdeck.exe` tutte le 7 risoluzioni di `vortexdeck_app_icon.ico` (da 16x16 a 256x256). L'icona è ora visibile nativamente in Windows Explorer, sul Desktop e nella barra delle applicazioni senza dipendere da compilatori esterni.
      - Inclusa la cartella `assets/icons` nel bundle distribuibile `dist/VortexDeck/assets/icons`.
      - Gestito l'arresto preventivo di istanze attive per consentire il repackaging pulito di `dist/VortexDeck`.
+  5. **Architettura Single-File Portable al 100% (`crates/hardware/src/cli_adapter.rs`)**:
+     - Incorporato il binario di supporto `ch57x-keyboard-tool.exe` direttamente all'interno dell'eseguibile principale via `include_bytes!`.
+     - Se l'utente copia e sposta **soltanto il singolo file `vortexdeck.exe`** senza alcuna cartella ausiliaria, il programma auto-estrae trasparentemente il tool di flashing in `%TEMP%\vortexdeck\bin\` al bisogno, garantendo che sia l'interfaccia, sia i profili in `%APPDATA%`, sia le automazioni host, sia la scrittura hardware USB funzionino senza alcun file o dipendenza esterna.
 - **Esito Verifiche**:
   - `cargo test --workspace`: **100% test superati (76 unit & integration tests)**.
   - `cargo clippy --workspace --all-targets -- -D warnings`: **0 warning**.

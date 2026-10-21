@@ -109,6 +109,29 @@ impl Ch57xCli {
             }
         }
 
+        // 5. Fallback auto-estrazione da binario incorporato (Self-Contained Portable Executable)
+        #[cfg(target_os = "windows")]
+        {
+            const EMBEDDED_TOOL: &[u8] = include_bytes!("../../../bin/ch57x-keyboard-tool.exe");
+            let temp_tool = std::env::temp_dir()
+                .join("vortexdeck")
+                .join("bin")
+                .join(exe_name);
+            if let Some(parent) = temp_tool.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let needs_write = match temp_tool.metadata() {
+                Ok(meta) => meta.len() != EMBEDDED_TOOL.len() as u64,
+                Err(_) => true,
+            };
+            if needs_write {
+                let _ = std::fs::write(&temp_tool, EMBEDDED_TOOL);
+            }
+            if temp_tool.exists() {
+                return Ok(Self::new(temp_tool));
+            }
+        }
+
         Err(CliError::NotFound(bin_folder))
     }
 
