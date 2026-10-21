@@ -250,7 +250,8 @@
      - Implementato `load_tray_icon(is_paused: bool) -> HICON` a 4 stadi: ricerca icona locale su disco -> cartella dell'eseguibile -> fallback estrazione da memoria compilata a `%TEMP%` -> fallback `LoadIconW(None, IDI_APPLICATION)`.
      - Implementato `update_tray_icon(is_paused: bool)` che invoca `Shell_NotifyIconW(NIM_MODIFY, &nid)` per scambiare in tempo reale l'icona tra ciano attivo e ambra in pausa.
      - Monitoraggio reattivo del cambio stato pausa in `VortexDeckApp::update()` e nel loop background.
-  4. **Release Packaging (`packaging/windows/build_release.ps1`)**:
+  4. **Release Packaging & PE Resource Embedding (`scripts/inject_icon.py`, `packaging/windows/build_release.ps1`)**:
+     - *Iniezione Risorse PE Windows (`RT_ICON` & `RT_GROUP_ICON`)*: Sviluppato modulo nativo Win32 (`BeginUpdateResourceW`, `UpdateResourceW`, `EndUpdateResourceW`) che inietta direttamente nell'intestazione PE del file `vortexdeck.exe` tutte le 7 risoluzioni di `vortexdeck_app_icon.ico` (da 16x16 a 256x256). L'icona è ora visibile nativamente in Windows Explorer, sul Desktop e nella barra delle applicazioni senza dipendere da compilatori esterni.
      - Inclusa la cartella `assets/icons` nel bundle distribuibile `dist/VortexDeck/assets/icons`.
      - Gestito l'arresto preventivo di istanze attive per consentire il repackaging pulito di `dist/VortexDeck`.
 - **Esito Verifiche**:

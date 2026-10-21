@@ -39,6 +39,11 @@ New-Item -ItemType Directory -Force -Path (Join-Path $DistDir "bin") | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $DistDir "assets\icons") | Out-Null
 
 Copy-Item $TargetExe -Destination (Join-Path $DistDir "vortexdeck.exe") -Force
+
+Write-Host "Embedding application icon into vortexdeck.exe PE resource header..." -ForegroundColor Cyan
+& python (Join-Path $WorkspaceRoot "scripts\inject_icon.py") (Join-Path $DistDir "vortexdeck.exe") (Join-Path $WorkspaceRoot "assets\icons\vortexdeck_app_icon.ico")
+& python (Join-Path $WorkspaceRoot "scripts\inject_icon.py") $TargetExe (Join-Path $WorkspaceRoot "assets\icons\vortexdeck_app_icon.ico")
+
 Copy-Item (Join-Path $WorkspaceRoot "bin\ch57x-keyboard-tool.exe") -Destination (Join-Path $DistDir "bin\ch57x-keyboard-tool.exe") -Force
 Copy-Item (Join-Path $WorkspaceRoot "bin\example-mapping.yaml") -Destination (Join-Path $DistDir "bin\example-mapping.yaml") -Force
 Copy-Item (Join-Path $WorkspaceRoot "assets\icons\*") -Destination (Join-Path $DistDir "assets\icons") -Recurse -Force
