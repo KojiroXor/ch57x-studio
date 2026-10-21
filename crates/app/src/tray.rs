@@ -72,6 +72,13 @@ pub fn notify_repaint() {
     windows_tray::notify_repaint();
 }
 
+pub fn update_tray_icon(is_paused: bool) {
+    #[cfg(target_os = "windows")]
+    windows_tray::update_tray_icon(is_paused);
+    #[cfg(not(target_os = "windows"))]
+    let _ = is_paused;
+}
+
 impl Default for TrayHandle {
     fn default() -> Self {
         Self::new()
@@ -85,7 +92,7 @@ mod windows_tray {
     use windows::core::w;
     use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, WPARAM};
     use windows::Win32::UI::Shell::{
-        Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NOTIFYICONDATAW,
+        Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY, NOTIFYICONDATAW,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu,
@@ -93,9 +100,83 @@ mod windows_tray {
         SetForegroundWindow, TrackPopupMenu, IDI_APPLICATION, MF_SEPARATOR, MF_STRING, MSG,
         TPM_BOTTOMALIGN, TPM_LEFTALIGN, TPM_RIGHTBUTTON, WM_APP, WM_DESTROY, WM_LBUTTONDBLCLK,
         WM_LBUTTONUP, WM_RBUTTONUP, WNDCLASSW, WS_OVERLAPPEDWINDOW,
+        LoadImageW, HICON, IMAGE_ICON, LR_DEFAULTSIZE, LR_LOADFROMFILE,
     };
 
     use std::sync::OnceLock;
+
+    const TRAY_ICON_ICO: &[u8] = include_bytes!("../../../assets/icons/vortexdeck_tray_icon.ico");
+    const TRAY_PAUSED_ICO: &[u8] = include_bytes!("../../../assets/icons/vortexdeck_tray_paused.ico");
+
+    fn resolve_icon_path(is_paused: bool) -> std::path::PathBuf {
+        let filename = if is_paused {
+            "vortexdeck_tray_paused.ico"
+        } else {
+            "vortexdeck_tray_icon.ico"
+        };
+
+        let local_path = std::path::Path::new("assets").join("icons").join(filename);
+        if local_path.exists() {
+            return local_path;
+        }
+
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(parent) = exe_path.parent() {
+                let exe_rel = parent.join("assets").join("icons").join(filename);
+                if exe_rel.exists() {
+                    return exe_rel;
+                }
+            }
+        }
+
+        let temp_path = std::env::temp_dir().join(filename);
+        let bytes = if is_paused {
+            TRAY_PAUSED_ICO
+        } else {
+            TRAY_ICON_ICO
+        };
+        let _ = std::fs::write(&temp_path, bytes);
+        temp_path
+    }
+
+    pub unsafe fn load_tray_icon(is_paused: bool) -> HICON {
+        let ico_path = resolve_icon_path(is_paused);
+        let wide_path: Vec<u16> = ico_path
+            .to_string_lossy()
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+
+        match LoadImageW(
+            None,
+            windows::core::PCWSTR(wide_path.as_ptr()),
+            IMAGE_ICON,
+            0,
+            0,
+            LR_LOADFROMFILE | LR_DEFAULTSIZE,
+        ) {
+            Ok(handle) if !handle.is_invalid() => HICON(handle.0),
+            _ => LoadIconW(None, IDI_APPLICATION).unwrap_or_default(),
+        }
+    }
+
+    pub fn update_tray_icon(is_paused: bool) {
+        if let Some(&raw_hwnd) = TRAY_HWND.get() {
+            unsafe {
+                let hwnd = HWND(raw_hwnd as *mut _);
+                let icon = load_tray_icon(is_paused);
+                let nid = NOTIFYICONDATAW {
+                    cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
+                    hWnd: hwnd,
+                    uID: 1,
+                    uFlags: NIF_ICON,
+                    hIcon: icon,
+                    ..Default::default()
+                };
+                let _ = Shell_NotifyIconW(NIM_MODIFY, &nid);
+            }
+        }
+    }
 
     const WM_TRAY_CALLBACK: u32 = WM_APP + 101;
     const ID_TRAY_OPEN: usize = 1001;
@@ -175,7 +256,7 @@ mod windows_tray {
             let _ = GLOBAL_TRAY_SENDER.set(sender);
 
             let class_name = w!("VortexDeckTrayClass");
-            let icon = LoadIconW(None, IDI_APPLICATION).unwrap_or_default();
+            let icon = load_tray_icon(false);
 
             let wc = WNDCLASSW {
                 lpfnWndProc: Some(tray_wnd_proc),

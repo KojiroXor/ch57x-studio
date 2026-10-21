@@ -116,6 +116,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         coordinator
                             .command_sender
                             .send(CoordinatorCommand::TogglePause)?;
+                        coordinator.process_pending_commands();
+                        tray::update_tray_icon(coordinator.dispatcher.is_paused());
                     }
                     TrayAction::ToggleAutostart => {
                         coordinator.toggle_autostart();
@@ -138,7 +140,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .with_inner_size([1260.0, 800.0])
             .with_min_inner_size([1040.0, 660.0])
             .with_visible(true)
-            .with_active(true),
+            .with_active(true)
+            .with_icon(egui::IconData {
+                rgba: include_bytes!("../../../assets/icons/vortexdeck_app_icon_64.rgba").to_vec(),
+                width: 64,
+                height: 64,
+            }),
         ..Default::default()
     };
 
@@ -155,6 +162,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 is_quitting: false,
                 flash_modal_preview: None,
                 hud_dismiss_at: None,
+                logo_texture: None,
+                last_tray_paused: None,
             }))
         }),
     );
@@ -170,6 +179,8 @@ struct VortexDeckApp {
     is_quitting: bool,
     flash_modal_preview: Option<HardwareFlashPreview>,
     hud_dismiss_at: Option<Instant>,
+    logo_texture: Option<egui::TextureHandle>,
+    last_tray_paused: Option<bool>,
 }
 
 impl eframe::App for VortexDeckApp {
@@ -222,6 +233,13 @@ impl eframe::App for VortexDeckApp {
 
         self.coordinator.process_pending_commands();
 
+        // Aggiorna dinamicamente l'icona della System Tray (notifiche/icone nascoste) al cambio stato Pausa
+        let is_paused = self.coordinator.dispatcher.is_paused();
+        if self.last_tray_paused != Some(is_paused) {
+            self.last_tray_paused = Some(is_paused);
+            tray::update_tray_icon(is_paused);
+        }
+
         // ---------------------------------------------------------------------
         // BARRA SUPERIORE UNIFICATA (Layout Orizzontale Fluido = ZERO Sovrapposizioni!)
         // ---------------------------------------------------------------------
@@ -235,7 +253,17 @@ impl eframe::App for VortexDeckApp {
             })
             .show(ctx, |ui| {
                 ui.horizontal_centered(|ui| {
-                    // 1. Titolo e Stato USB a Sinistra
+                    // 1. Logo, Titolo e Stato USB a Sinistra
+                    let logo_tex = self.logo_texture.get_or_insert_with(|| {
+                        let icon_data = egui::ColorImage::from_rgba_unmultiplied(
+                            [64, 64],
+                            include_bytes!("../../../assets/icons/vortexdeck_app_icon_64.rgba"),
+                        );
+                        ctx.load_texture("vortexdeck_logo", icon_data, egui::TextureOptions::LINEAR)
+                    });
+                    ui.image((logo_tex.id(), egui::vec2(22.0, 22.0)));
+                    ui.add_space(4.0);
+
                     ui.label(
                         egui::RichText::new("VortexDeck")
                             .font(FontId::proportional(16.0))

@@ -230,3 +230,30 @@
   - `cargo clippy --workspace --all-targets -- -D warnings`: **0 warning**.
   - `cargo fmt --all -- --check`: **Formattazione conforme**.
   - Binario release aggiornato in [`dist/VortexDeck/vortexdeck.exe`](dist/VortexDeck/vortexdeck.exe).
+
+
+---
+
+### Sessione 17: Iconografia Ufficiale VortexDeck, Icona Notifiche Nascoste Dinamica e Logo Toolbar
+- **Data**: `2026-10-21`
+- **Motivazione**: Creare un'identità visiva d'impatto e futuristica per VortexDeck, dotando il programma di icone dedicate per l'eseguibile desktop, la finestra dell'applicazione e soprattutto la System Tray (area di notifica / "icone nascoste" di Windows 11).
+- **Interventi Realizzati**:
+  1. **Generazione e Compositing Asset Grafici (`assets/icons/`)**:
+     - *Vortex App Icon (`vortexdeck_app_icon.png` / `.ico`)*: Design basato sul glifo a vortice quantico glowing cyan/mint green, incastonato in uno squircle stile Apple/Fluent in dark obsidian frosted glass con riflesso speculare superiore e bordi smussati luminosi (1024x1024 PNG con trasparenza alpha nativa + ICO multi-risoluzione da 16x16 a 256x256).
+     - *System Tray Active Icon (`vortexdeck_tray_icon.png` / `.ico`)*: Glifo circolare geometrico ad alto contrasto con bagliore neon ciano/menta, ottimizzato per perfetta leggibilità a 16x16 / 32x32 pixel nella barra delle notifiche di Windows.
+     - *System Tray Paused Icon (`vortexdeck_tray_paused.png` / `.ico`)*: Variante speculare con bagliore neon arancione/ambra per segnalare istantaneamente all'utente quando le automazioni host sono in pausa.
+     - *Dati Binari RGBA Compilati (`.rgba`)*: Generati file binari raw RGBA 64x64 e 32x32 per inclusione a tempo di compilazione a zero overhead di decodifica runtime (`include_bytes!`).
+  2. **Integrazione Icona Finestra e Taskbar (`crates/app/src/main.rs`)**:
+     - Configurato `egui::ViewportBuilder::default().with_icon(egui::IconData { ... })` con il payload RGBA 64x64 di `vortexdeck_app_icon`.
+     - Aggiunto il logo grafico 22x22 affiancato alla scritta "VortexDeck" nella Toolbar superiore macOS Liquid Glass (`self.logo_texture`).
+  3. **Integrazione Dinamica System Tray Win32 (`crates/app/src/tray.rs`)**:
+     - Implementato `load_tray_icon(is_paused: bool) -> HICON` a 4 stadi: ricerca icona locale su disco -> cartella dell'eseguibile -> fallback estrazione da memoria compilata a `%TEMP%` -> fallback `LoadIconW(None, IDI_APPLICATION)`.
+     - Implementato `update_tray_icon(is_paused: bool)` che invoca `Shell_NotifyIconW(NIM_MODIFY, &nid)` per scambiare in tempo reale l'icona tra ciano attivo e ambra in pausa.
+     - Monitoraggio reattivo del cambio stato pausa in `VortexDeckApp::update()` e nel loop background.
+  4. **Release Packaging (`packaging/windows/build_release.ps1`)**:
+     - Inclusa la cartella `assets/icons` nel bundle distribuibile `dist/VortexDeck/assets/icons`.
+     - Gestito l'arresto preventivo di istanze attive per consentire il repackaging pulito di `dist/VortexDeck`.
+- **Esito Verifiche**:
+  - `cargo test --workspace`: **100% test superati (76 unit & integration tests)**.
+  - `cargo clippy --workspace --all-targets -- -D warnings`: **0 warning**.
+  - `build_release.ps1`: Pacchetto distribuibile generato con successo in [`dist/VortexDeck`](dist/VortexDeck).

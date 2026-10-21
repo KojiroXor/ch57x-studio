@@ -1,6 +1,7 @@
 # VortexDeck Windows Release Packager
 param (
-    [string]$Configuration = "release"
+    [string]$Configuration = "release",
+    [switch]$ForceRebuild = $false
 )
 
 $ErrorActionPreference = "Stop"
@@ -13,7 +14,7 @@ $WorkspaceRoot = (Get-Item $PSScriptRoot).Parent.Parent.FullName
 $TargetExe = Join-Path $WorkspaceRoot "target\$Configuration\vortexdeck.exe"
 $DistDir = Join-Path $WorkspaceRoot "dist\VortexDeck"
 
-if (-not (Test-Path $TargetExe)) {
+if ($ForceRebuild -or (-not (Test-Path $TargetExe))) {
     Write-Host "[1/3] Compiling VortexDeck in $Configuration mode..." -ForegroundColor Yellow
     $env:PATH = "$env:USERPROFILE\.cargo\bin;" + $env:PATH
     & cargo build --release -p ch57x-studio
@@ -22,15 +23,25 @@ if (-not (Test-Path $TargetExe)) {
 }
 
 Write-Host "[2/3] Assembling distribution bundle into $DistDir..." -ForegroundColor Yellow
+Get-Process vortexdeck -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Milliseconds 300
+
 if (Test-Path $DistDir) {
-    Remove-Item -Recurse -Force $DistDir
+    try {
+        Remove-Item -Recurse -Force $DistDir -ErrorAction Stop
+    } catch {
+        Write-Host "Warning: Could not remove directory, cleaning files individually..." -ForegroundColor Yellow
+        Get-ChildItem -Path $DistDir -Recurse | Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
+    }
 }
 New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $DistDir "bin") | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $DistDir "assets\icons") | Out-Null
 
 Copy-Item $TargetExe -Destination (Join-Path $DistDir "vortexdeck.exe") -Force
 Copy-Item (Join-Path $WorkspaceRoot "bin\ch57x-keyboard-tool.exe") -Destination (Join-Path $DistDir "bin\ch57x-keyboard-tool.exe") -Force
 Copy-Item (Join-Path $WorkspaceRoot "bin\example-mapping.yaml") -Destination (Join-Path $DistDir "bin\example-mapping.yaml") -Force
+Copy-Item (Join-Path $WorkspaceRoot "assets\icons\*") -Destination (Join-Path $DistDir "assets\icons") -Recurse -Force
 
 $readmeContent = @"
 # VortexDeck (CH57x Studio)
