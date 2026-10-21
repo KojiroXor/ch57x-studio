@@ -156,14 +156,18 @@ Se incontri problemi simili in futuro, ecco le cause radice già identificate e 
 | **GitHub Actions runner fallito su Linux** | Il file `rust-toolchain.toml` specificava un target tuple fisso per MinGW Windows che mandava in errore il runner Ubuntu. | Rimosso `rust-toolchain.toml` dal tracking Git e target-gated i warning specifici Linux via `#[cfg]`. |
 | **Sfarfallio e finestre nere cmd popup** | `std::process::Command` senza flag specifiche apre una console Windows quando invocato da processi GUI. | Aggiunta sistematica di `creation_flags(0x08000000)` (`CREATE_NO_WINDOW`) su tutti i comandi di sistema. |
 | **Finestra posizionata con 8px di errore** | `GetWindowRect` include le ombre DWM invisibili su Windows 10 e 11. | Utilizzo esclusivo di `DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS)` per calcolare l'offset esatto. |
+| **Chiusura bloccata da System Tray (processi orfani in Task Manager)** | Quando la finestra è nascosta (`Visible(false)`), `winit`/`eframe` sospende il loop di rendering e non legge il canale della tray. | Nel thread Win32 della tray, `ID_TRAY_EXIT` esegue subito `Shell_NotifyIconW(NIM_DELETE)` e termina il processo all'istante con `std::process::exit(0)`. |
+| **Autostart fallace con working directory `C:\Windows\System32`** | Al login Windows avvia i processi da registro con working directory di sistema, rompendo i path relativi. | Forzata `std::env::set_current_dir(exe_dir)` come primissima riga di `main()`, con doppia registrazione (HKCU Run + Startup `.lnk`) e pulizia di `StartupApproved`. |
+| **Icona mancante sul file `.exe` in Windows Explorer** | I compilatori Rust GNU non includono automaticamente risorse PE `.rsrc` senza compilatori di risorse esterni. | Script Win32 nativo `inject_icon.py` via `BeginUpdateResourceW`/`UpdateResourceW`/`EndUpdateResourceW` che inietta le 7 risoluzioni `.ico` come `RT_ICON` e `RT_GROUP_ICON` (ID 1). |
+| **Dipendenza dalla cartella `bin/` per flashing hardware su PC puliti** | Se l'utente spostava solo `vortexdeck.exe`, la scrittura USB falliva per assenza del tool esterno. | Incorporato `ch57x-keyboard-tool.exe` via `include_bytes!` con auto-estrazione trasparente on-demand in `%TEMP%\vortexdeck\bin\`. |
 
 ---
 
 ## 6. Stato dei Test e Pipeline CI/CD
 
-- **Suite di Test**: 75+ test unitari e di integrazione passati al 100% in tutto il workspace:
+- **Suite di Test**: 76 test unitari e di integrazione passati al 100% in tutto il workspace:
   - `ch57x-domain`: 11 test passati.
-  - `ch57x-platform`: 11 test passati.
+  - `ch57x-platform`: 12 test passati (incluso test ciclo di vita autostart).
   - `ch57x-hardware`: 6 test passati.
   - `ch57x-compiler`: 11 test passati (inclusa validazione YAML reale contro il binario `ch57x-keyboard-tool`).
   - `ch57x-persistence`: 9 test passati.
@@ -222,8 +226,9 @@ Se vieni incaricato di espandere ulteriormente VortexDeck, ecco i compiti a più
 
 ---
 
-## ⚡ Aggiornamenti Architetturali Recenti (Sessione 15)
+## ⚡ Aggiornamenti Architetturali Recenti (Sessioni 15, 16 e 17)
 
+### Sessione 15: Trigger BLE-Safe, Scorciatoie Start Menu per App Chiusa, e Luminosità IOCTL `\\.\LCD` a 0ms
 1. **Trigger BLE-Safe (`crates/domain/src/triggers.rs`)**:
    - I chip CH57x/CH58x troncano i keycode HID virtuali `> 0x65` quando operano in modalità Bluetooth Low Energy (BLE).
    - I 60 trigger sono stati riassegnati a codici standard `< 0x65` (F1..F11, 0..9, a..z, minus) con combinazioni `Ctrl+Alt+Shift` e `Ctrl+Alt+Win`.
@@ -236,3 +241,30 @@ Se vieni incaricato di espandere ulteriormente VortexDeck, ecco i compiti a più
 3. **Motore Luminosità a 2 Stadi (`crates/platform/src/windows/brightness.rs`)**:
    - *Stadio 1*: `CreateFileW(w!("\\\\.\\LCD"))` con `DeviceIoControl(IOCTL_VIDEO_QUERY_DISPLAY_BRIGHTNESS)` e `IOCTL_VIDEO_SET_DISPLAY_BRIGHTNESS`. Risponde in < 1ms sui pannelli interni di Microsoft Surface e notebook.
    - *Stadio 2*: Fallback asincrono WMI debounced `WmiSetBrightness` e GDI `SetDeviceGammaRamp`.
+
+---
+
+### Sessione 16: Zero Processi Residui da System Tray, Risveglio Win32 e Autostart a Doppia Garanzia
+1. **Chiusura Immediata Win32 (`crates/app/src/tray.rs`)**:
+   - Quando l'utente preme "Esci" dalla System Tray con la finestra nascosta, il messaggio `WM_COMMAND (ID_TRAY_EXIT)` rimuove subito l'icona con `Shell_NotifyIconW(NIM_DELETE)` ed esce direttamente con `std::process::exit(0)`. Nessun thread o processo rimane congelato in Task Manager.
+2. **Risveglio Affidabile della Finestra Nascosta**:
+   - Il click o doppio-click sull'icona della System Tray individua la finestra principale via Win32 (`FindWindowW`) e ne forza il ripristino con `ShowWindow(SW_RESTORE)` e `SetForegroundWindow`, svegliando reattivamente il context di egui.
+3. **Autostart a Doppia Garanzia (`crates/platform/src/windows/windows_api.rs`)**:
+   - Registrazione simultanea nel Registro di Windows (`HKCU\...\Run`) con flag `--background` E creazione automatica del collegamento `.lnk` con argomenti in `%APPDATA%\...\Startup\VortexDeck.lnk`.
+   - Pulizia automatica dei blocchi di Task Manager in `StartupApproved\Run` di Windows 11.
+   - Toggle visivo dedicato nella Top Toolbar (`Avvio Win: ON / OFF`) e voce sincronizzata con spunta Win32 `MF_CHECKED` nella System Tray.
+
+---
+
+### Sessione 17: Iconografia Ufficiale, Notifiche Dinamiche e Architettura 100% Single-File Portable
+1. **Iconografia ad Alta Fedeltà (`assets/icons/`)**:
+   - `vortexdeck_app_icon.png` / `.ico`: Glifo vortice quantico ciano/menta al neon incastonato su squircle in vetro ossidiana con riflesso speculare superiore (1024x1024 PNG con canale alfa + ICO multi-risoluzione da 16x16 a 256x256).
+   - `vortexdeck_tray_icon.png` / `.ico`: Glifo circolare geometrico ultra-definito ad alto contrasto per la barra delle notifiche e l'area delle icone nascoste di Windows 11.
+   - `vortexdeck_tray_paused.png` / `.ico`: Glifo al neon ambra/arancione per la segnalazione istantanea dello stato di pausa automazioni.
+2. **System Tray Dinamica Win32 (`crates/app/src/tray.rs`)**:
+   - `update_tray_icon(is_paused)` aggiorna reattivamente l'icona della barra delle notifiche tra Ciano (Attivo) e Ambra (In Pausa) tramite `Shell_NotifyIconW(NIM_MODIFY)`.
+3. **Iniezione Nativa Risorse PE Windows (`scripts/inject_icon.py`)**:
+   - Iniezione diretta di tutte le 7 risoluzioni di `vortexdeck_app_icon.ico` nella sezione `.rsrc` dell'eseguibile `vortexdeck.exe` (`RT_ICON` e `RT_GROUP_ICON` ID 1) tramite API kernel Win32 (`BeginUpdateResourceW`/`UpdateResourceW`/`EndUpdateResourceW`). L'icona è visibile in Windows Explorer e sul Desktop senza tool esterni.
+4. **Architettura 100% Single-File Standalone (`crates/hardware/src/cli_adapter.rs`)**:
+   - Il tool di flashing `ch57x-keyboard-tool.exe` (1.9 MB) e tutti gli asset grafici sono incorporati nel binario via `include_bytes!`.
+   - Se l'utente sposta **soltanto il singolo file `vortexdeck.exe`** su un PC nuovo, il programma auto-estrae il tool in `%TEMP%\vortexdeck\bin\` al bisogno: l'app non fallisce mai, non richiede cartelle ausiliarie né tool di sviluppo.

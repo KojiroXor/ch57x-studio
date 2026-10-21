@@ -27,6 +27,8 @@
 - **🎚️ Native Windows Screen Brightness**: Custom WMI & Gamma Ramp brightness engine for rotary knobs—smoothly dims or boosts laptop screens (Surface, ThinkPad) and external displays without relying on macOS-specific keycodes.
 - **⚡ 1-Click Productivity Presets**: Pre-configured 3-in-1 rotary encoder suites (Volume+Mute, Zoom+Reset, IDE Tab Scroll, Virtual Desktops, Undo/Redo) and rapid button chips (`agy`, Windows Terminal, Device Manager, Win+V, Screenshot).
 - **📋 1-Click Layer Templates**: Populate all 18 slots of any layer at once with tested templates like **Coding & AI Productivity** or **Window & Multi-Monitor Tiling**.
+- **📦 100% Standalone Single-File Executable**: Embedded PE resource headers, runtime icon decoding, and transparent on-demand extraction for hardware flashing—transfer just `vortexdeck.exe` to any Windows 10/11 machine and it runs out of the box with zero dependencies.
+- **🎨 Dynamic System Tray & Quantum Icon**: Luminous geometric vortex glyph in the Windows notification area that dynamically transitions between glowing cyan (active) and amber (paused).
 - **🛡️ Crash-Resistant State & Audit**: Transactional atomic storage (`.tmp` -> rename), deployment journal state machine, executable trust-store hash validation, and background system tray daemon.
 
 ---

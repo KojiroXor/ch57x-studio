@@ -20,6 +20,9 @@
 - [Sessione 12: Risoluzione GitHub Actions CI/CD e Build Cloud](#sessione-12-risoluzione-github-actions-cicd-e-build-cloud)
 - [Sessione 13: Audit di Sicurezza e Sanitizzazione Dati Sensibili](#sessione-13-audit-di-sicurezza-e-sanitizzazione-dati-sensibili)
 - [Sessione 14: Compilazione Release Locale e Validazione Eseguibile](#sessione-14-compilazione-release-locale-e-validazione-eseguibile)
+- [Sessione 15: Fix Luminosità Surface/Portatili, Toggle Autostart UI e Funzionamento Bluetooth / App Chiusa](#sessione-15-fix-luminosit-surfaceportatili-toggle-autostart-ui-e-funzionamento-bluetooth--app-chiusa)
+- [Sessione 16: Fix Chiusura Immediata System Tray, Risveglio Win32 e Autostart a Doppia Garanzia](#sessione-16-fix-chiusura-immediata-system-tray-esci-a-zero-processi-residui-risveglio-win32-e-autostart-a-doppia-garanzia)
+- [Sessione 17: Iconografia Ufficiale VortexDeck, Iniezione PE Header, Notifiche Nascoste Dinamiche e Architettura 100% Single-File Portable](#sessione-17-iconografia-ufficiale-vortexdeck-icona-notifiche-nascoste-dinamica-e-logo-toolbar)
 
 ---
 
